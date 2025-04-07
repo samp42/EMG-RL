@@ -27,3 +27,10 @@ pip install -e .
 pip install gym==0.15.3
 ```
 
+
+## Install the repository environment
+
+From the directory above this repository:
+```
+pip install -e EMG-RL
+```
