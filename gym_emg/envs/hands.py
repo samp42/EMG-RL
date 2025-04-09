@@ -1,31 +1,43 @@
 import numpy as np
 import os
 from gym import utils, error
-from gym.envs.robotics.hand.manipulate import ManipulateEnv, HandPenEnv
 from gym.envs.robotics.utils import robot_get_obs
 from gym.envs.robotics import rotations, hand_env
 
-import gym.envs.robotics.hand.manipulate as module
-
-L = "/home/jacobyroy/miniconda3/envs/emg_rl/lib/python3.8/site-packages/gym/envs/robotics/assets"
-
-MANIPULATE_PEN_XML = os.path.join('hand', 'manipulate_pen.xml')
+from dexterous_gym.core.two_hand_robot_env import RobotEnv
 
 import pathlib
 
-MANIPULATE_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/hand/manipulate_hand.xml')
-print(MANIPULATE_HAND_XML)
+TWO_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/hand/2hands.xml')
+print(TWO_HAND_XML)
 
-class BaseHandEnv(hand_env.HandEnv, utils.EzPickle):
+class BaseHandEnv(RobotEnv, utils.EzPickle):
     def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse'):
         utils.EzPickle.__init__(self, target_position, target_rotation, reward_type)
 
+        self.n_actions = 40 # Two static hands with only joints moving
         n_substeps=20
         initial_qpos = {}
-        relative_control = False        
-        hand_env.HandEnv.__init__(
-                    self, model_path=MANIPULATE_HAND_XML, n_substeps=n_substeps, initial_qpos=initial_qpos,
-                    relative_control=relative_control)
+        relative_control = False   
+
+        """
+        super(RobotEnv, self).__init__(
+            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
+        )
+        """
+        RobotEnv.__init__(self,
+            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
+        )
+
+    # TwoHandsEnv methods
+    # ----------------------------
+    def _set_action(self, action):
+        assert action.shape == (self.n_actions,)
+        ctrlrange = self.sim.model.actuator_ctrlrange
+        actuation_range = (ctrlrange[:, 1] - ctrlrange[:, 0]) / 2.0
+        actuation_centre = (ctrlrange[:, 1] + ctrlrange[:, 0]) / 2.0
+        self.sim.data.ctrl[:] = actuation_centre + action*actuation_range
+        self.sim.data.ctrl[:] = np.clip(self.sim.data.ctrl, ctrlrange[:, 0], ctrlrange[:, 1])
 
     # RobotEnv methods
     # ----------------------------
@@ -47,7 +59,7 @@ class BaseHandEnv(hand_env.HandEnv, utils.EzPickle):
 
         # Run the simulation for a bunch of timesteps to let everything settle in.
         for _ in range(10):
-            self._set_action(np.zeros(20))
+            self._set_action(np.zeros(40))
             try:
                 self.sim.step()
             except mujoco_py.MujocoException:
@@ -75,12 +87,23 @@ class BaseHandEnv(hand_env.HandEnv, utils.EzPickle):
             'desired_goal': self.goal.ravel().copy(),
         }
 
+    def _viewer_setup(self):
+        # body_id = self.sim.model.body_name2id('robot0:palm')
+        middle_id = self.sim.model.site_name2id('centre-point')
+        # lookat = self.sim.data.body_xpos[body_id]
+        lookat = self.sim.data.site_xpos[middle_id]
+        for idx, value in enumerate(lookat):
+            self.viewer.cam.lookat[idx] = value
+        self.viewer.cam.distance = 1.5
+        self.viewer.cam.azimuth = 180.0
+        self.viewer.cam.elevation = -55.0
 
-class SingleHand(BaseHandEnv):
+
+class TwoHands(BaseHandEnv):
     def __init__(self, direction=1, alpha=1.0):
         self.direction = direction #-1 or 1
         self.alpha = alpha
-        super(SingleHand, self).__init__()
+        super(TwoHands, self).__init__()
         #self.bottom_id = self.sim.model.site_name2id("object:bottom")
         #self.top_id = self.sim.model.site_name2id("object:top")
         self._max_episode_steps = 2000
