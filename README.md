@@ -30,7 +30,8 @@ pip install gym==0.15.3
 
 ## Install the repository environment
 
-From the directory above this repository:
+Navigate to the repo top-level and run:
+
 ```
-pip install -e EMG-RL
+pip install -e .
 ```

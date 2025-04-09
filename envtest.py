@@ -28,22 +28,7 @@ envs = [
 ]
 
 
-for name in envs:
 
-    env = gym.make(name)
-    print(name)
-
-    for j in range(1):
-        obs = env.reset()
-        env.render()
-        r_sum = 0.0
-        for i in range(50):
-            obs, r, d, info = env.step(env.action_space.sample())
-            r_sum += r
-            time.sleep(0.07)
-            env.render()
-        print(r_sum)
-    env.close()
 
 
 
@@ -57,7 +42,8 @@ for j in range(1):
     obs = env.reset()
     env.render()
     r_sum = 0.0
-    for i in range(50):
+    d = False
+    while not d:
         obs, r, d, info = env.step(env.action_space.sample())
         r_sum += r
         time.sleep(0.07)
