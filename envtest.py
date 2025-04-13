@@ -28,18 +28,7 @@ envs = [
 ]
 
 
-# Test load data
-import scipy.io
-file = "/home/jacobyroy/Desktop/COMP579/s3/S3_E2_A1.mat"
-mat = scipy.io.loadmat(file)
 
-
-# TODO: normalize data to range accepted by sim
-for element in mat:
-    print(element)
-print(mat)
-
-print(mat["glove"].shape)
 
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -214,10 +203,31 @@ for joint in glove2sim:
 print(glove2sim_ID)
 print(glove2sim_MAP)
 
+
+# Test load data
+import scipy.io
+file = "/home/jacobyroy/Desktop/COMP579/s1-cal/S1_E2_A1.mat"
+mat1 = scipy.io.loadmat(file)
+file = "/home/jacobyroy/Desktop/COMP579/s2-cal/S2_E2_A1.mat"
+mat2 = scipy.io.loadmat(file)
+file = "/home/jacobyroy/Desktop/COMP579/s3-cal/S3_E2_A1.mat"
+mat3 = scipy.io.loadmat(file)
+file = "/home/jacobyroy/Desktop/COMP579/s4-cal/S4_E2_A1.mat"
+mat4 = scipy.io.loadmat(file)
+
+for elem in mat2:
+    print(elem)
+
+#plt.plot(mat1["angles"][:,7]) # Subject 1 seems like a black sheep
+plt.plot(mat2["angles"][:,7])
+plt.plot(mat3["angles"][:,7])
+plt.plot(mat4["angles"][:,7])
+plt.show()
+
 # Keep only relevant data
 #joints = mat["glove"][:,list(glove2sim_ID.keys())]
 #maps = [glove2sim_MAP[i] for i in list(glove2sim_ID.keys())]
-plt.plot(mat["glove"][:, [0,1,2,3]])
+plt.plot(mat["angles"])
 plt.show()
 
 exit()

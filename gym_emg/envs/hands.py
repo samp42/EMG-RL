@@ -3,10 +3,10 @@ import os
 from gym import utils, error
 from gym.envs.robotics.utils import robot_get_obs
 from gym.envs.robotics import rotations, hand_env
-
 from dexterous_gym.core.two_hand_robot_env import RobotEnv
-
 import pathlib
+
+from dataloader import dataloader
 
 TWO_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/hand/2hands.xml')
 print(TWO_HAND_XML)
@@ -100,7 +100,7 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
 
 class TwoHands(BaseHandEnv):
-    def __init__(self, direction=1, alpha=1.0):
+    def __init__(self, direction=1, alpha=1.0, subject=1, exercise=2):
         self.direction = direction #-1 or 1
         self.alpha = alpha
         super(TwoHands, self).__init__()
@@ -109,13 +109,26 @@ class TwoHands(BaseHandEnv):
         self._max_episode_steps = 2000
         self.observation_space = self.observation_space["observation"]
 
+        # Load subject data
+        self.loader = dataloader(f"~/Desktop/COMP579/s{subject}-cal/S{subject}_E{exercise}_A1.mat")
+        self.sample_counter = 0
+
     def step(self, action):
+
+        action1 = self.loader.get_sample(sample_counter) # Get hand pose reference
+        sample_counter += 1
+        done = False
+        if sample_counter >= loader.get_num_samples():
+            done = True
+        
+        action = np.concatenate(action, action1)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         self._set_action(action)
         self.sim.step()
-        self._step_callback()
+
+        self._step_callback() # ?
+
         obs = self._get_obs()
-        done = False
         info = {}
         reward = self.compute_reward()
         return obs["observation"], reward, done, info

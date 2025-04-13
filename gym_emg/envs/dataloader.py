@@ -2,9 +2,10 @@ import scipy.io
 import os
 import numpy as np
 from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
 
 # CyberGlove II mapping: https://www.researchgate.net/figure/Cyberglove-II-device-and-the-placement-of-the-22-sensors_fig1_338483027 
-sim2glove = {
+sim2glove_old = {
     "WF": { # Wrist flex
         "id": {1:21},
         "glovemap": [0,100], # Raw data to Angles (min/max of raw data used)
@@ -80,25 +81,32 @@ sim2glove = {
         "simmap": [0, 90]
     },
 
+
+    # 1: general hand flexion? more like metacarpal to/from palm
+    # 
+
     "Ta": { # Thumb abduction (proximal)
         "id": {17:None},
         "glovemap": [0,100],
         "simmap": [0, 90]
     },
-    "TM1": { # Thumb metacarpal 1 (to/from palm)
-        "id": {15:1},
+    "TM1": { # Thumb metacarpal 1 (lateral to palm, but with rotation??)
+        #"id": {15:1},
+        "id": {15:None},
         "glovemap": [0,100],
         "simmap": [0, 90] # OK
     },
-    "TM2": { # Thumb metacarpal 2 (lateral to palm)
-        "id": {16:4},
+    "TM2": { # Thumb metacarpal 2 (to/from palm)
+        #"id": {16:4},
+        "id": {16:None},
         "glovemap": [0,100],
         "simmap": [0, 45] # OK
     },
     "TP": { # Thumb proximal
-        "id": {18:2},
-        "glovemap": [0,100],
-        "simmap": [0, 90]
+        "id": {18:2}, # OK
+        #"id": {18:None},
+        "glovemap": [90,0],
+        "simmap": [0, 90] # OK
     },
     "Tb": { # Thumb ptit boutte
         "id": {19:3}, # OK
@@ -108,9 +116,100 @@ sim2glove = {
 }
 
 
+
+
+sim2glove = {
+    "WF": { # Wrist flex
+        "id": {1:21},
+        "simmap": [0, 90] # Calibrated angle to sim range (-1 to 1)
+    },
+    "WFl": { # Wrist flex (lateral)
+        "id": {2:22},
+        "simmap": [0, 90]
+    },
+
+    "IM": { # Index metacarpal 
+        "id": {3:5}, # OK
+        "simmap": [0, 90] # OK
+    },
+    "IP": { # Index proximal 
+        "id": {4:7}, # OK
+        "simmap": [0, 140]
+    },
+
+    "Ma": { # Middle abduction
+        #"id": {5:6},
+        "id": {5:None},
+        "simmap": [-20, 20]
+    },
+    "MM": { # Middle metacarpal
+        "id": {6:8},
+        "simmap": [0, 90]
+    },
+    "MP": { # Middle proximal
+        "id": {7:9},
+        #"simmap": [0, 90] # Not working??
+        "simmap": [0, 60] 
+    },
+
+    "Ra": { # Ring abduction
+        #"id": {8:11},
+        "id": {8:None},
+        "simmap": [-20, 20]
+    },
+    "RM": { # Ring metacarpal
+        "id": {9:10}, # OK
+        "simmap": [0, 110] # unsure about range
+    },
+    "RP": { # Ring proximal
+        "id": {10:12},
+        "simmap": [0, 160]
+    },
+
+    "Pa1": { # Pinky abduction 1
+        #"id": {11:20},
+        "id": {11:None},
+        "simmap": [0, 40]
+    },
+    "Pa2": { # Pinky abduction 2
+        #"id": {12:15},
+        "id": {12:None},
+        "simmap": [0, 90]
+    },
+    "PM": { # Pinky metacarpal
+        "id": {13:14}, # OK
+        "simmap": [0, 150]
+    },
+    "PP": { # Pinky proximal
+        "id": {14:16}, # OK
+        "simmap": [0, 90]
+    },
+
+    "Ta": { # Thumb abduction (proximal)
+        "id": {17:None},
+        "simmap": [0, 90]
+    },
+    "TM1": { # Thumb metacarpal 1 (lateral to palm, but with rotation??)
+        "id": {15:2},
+        "simmap": [0,40]
+    },
+    "TM2": { # Thumb metacarpal 2 (to/from palm)
+        "id": {16:1},
+        "simmap": [-40,45]
+    },
+    "TP": { # Thumb proximal
+        "id": {18:3},
+        "simmap": [-25, 20]
+    },
+    "Tb": { # Thumb ptit boutte
+        "id": {19:4}, 
+        "simmap": [65, -45]
+    },
+}
+
 class dataloader:
 
-    def __init__(self, folderpath):
+    def __init__(self, file):
         # Quick and dirty mapping: assume range for each joint given exercise => map angle and then map from -1 to 1
         # For drifting, low-pass filter?
 
@@ -122,13 +221,13 @@ class dataloader:
             if list(sim2glove[joint]["id"].values())[0] is not None:
                 # Fix glove index with -1
                 self.sim2glovemap[list(sim2glove[joint]["id"].keys())[0]] = list(sim2glove[joint]["id"].values())[0]-1
-                self.glovemap[list(sim2glove[joint]["id"].values())[0]-1] = sim2glove[joint]["glovemap"]
                 self.simmap[list(sim2glove[joint]["id"].keys())[0]] = sim2glove[joint]["simmap"]
 
+        """
         # Load data
         # TODO: combine all together into one big signal?
         import matplotlib.pyplot as plt
-        file = "/home/jacobyroy/Desktop/COMP579/s3/S3_E2_A1.mat"
+        file = "/home/jacobyroy/Desktop/COMP579/s2/S2_E2_A1.mat"
         self.data = scipy.io.loadmat(file)
         joints = self.data["glove"]
 
@@ -168,12 +267,42 @@ class dataloader:
         ACTION_SPACE_SIZE = 20
         self.pose = np.zeros((joints.shape[0],ACTION_SPACE_SIZE))
         self.pose[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.keys())]
+        """
 
-        # Find E2, which contains exercises with full range
+        # Load data
+        # TODO: combine all together into one big signal?
+        self.data = scipy.io.loadmat(file)
+        joints = self.data["angles"] # Calibrated data
+        #for joint in range(len(joints[0,:])):
+        #    print(joint)
+        #    plt.plot(joints[:,joint])
+        #    plt.show()
 
-        # Find E2 range for all channels
+        # TODO: find middle point using median of half of ordered points and use this as baseline?
+
+        # Reorder data to be in same positions of sim space (others are ignored)
+        joints[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.values())]
+        #plt.plot(joints[:,list(self.simmap.keys())])
+        #plt.show()
+
+        # Apply mapping from calibrated angle to sim value
+        for i in self.simmap:
+            lmap = interp1d(self.simmap[i], [-1,1], fill_value="extrapolate")
+            joints[:,i] = lmap(joints[:,i])
+
+        # Clip data
+        joints = np.clip(joints, -1, 1)
+        #plt.plot(joints[:,list(self.simmap.keys())])
+        #plt.show()
+
+        # Only keep action values
+        ACTION_SPACE_SIZE = 20
+        self.pose = np.zeros((joints.shape[0],ACTION_SPACE_SIZE))
+        self.pose[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.keys())]
 
     def get_sample(self, index):
         # Sample is observation (EMG, Pose)
         return self.pose[index,:]
         
+    def get_num_samples(self):
+        return len(self.pose[:,0])

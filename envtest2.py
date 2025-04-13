@@ -28,6 +28,8 @@ envs = [
 ]
 
 
+# Calibrated data for DB1, DB2 and DB5 is DB9: https://ninapro.hevs.ch/instructions/DB9.html
+
 
 from dataloader import dataloader
 loader = dataloader("")
@@ -52,22 +54,25 @@ for j in range(1):
         time.sleep(0.07)
         env.render()
 
+        """
         # Test single joint
-        joint = 16
+        joint1 = 15
+        joint2 = 16
         for pos in range(50):
-            action[joint] = pos*0.01 - 1
+            action[joint1] = pos*1/50 - 1
+            action[joint2] = pos*1/50 - 1
             obs, r, d, info = env.step(action)
             r_sum += r
             time.sleep(0.07)
             env.render()
-
         for pos in range(50):
-            action[joint] = pos*0.01
+            action[joint1] = pos*1/50
+            action[joint2] = pos*1/50
             obs, r, d, info = env.step(action)
             r_sum += r
             time.sleep(0.07)
             env.render()
-
+        """
 
         # INDEX FLEXION IS (+), EXTENSION IS (-) (joints ID 5 is index in glove)
         # Test the data
