@@ -13,21 +13,41 @@ name = 'gym_emg/SingleHand-v0'
 name = 'gym_emg/TwoHands-v0'
 print(name)
 datapath = f"{pathlib.Path('~').expanduser()}/Desktop/COMP579/data"
-env = gym.make(name, datapath=datapath, subject=2, exercise=2, subsampling=20) # This will also take care of registering the environment
+
+# This will also take care of registering the environment
+# subsampling will subsample the dataset (keep at 1 if want all samples)
+# n_substeps will affect simulation accuracy and stability by performing more simulated steps in-between steps
+# subject and exercise determine the datasets to be used
+env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=1, subject=2, exercise=3) # with rendering
 
 
-d = False
-while not d:
+# NOTE: recommended to use only exercise 2, as exercise 3 has objects which provide force feedback (EMG may not match as expected without force feedback)
+subjects = {
+    1:[2,3],
+    2:[2,3],
+    3:[2,3],
+    4:[2,3],
+    5:[2,3],
+    6:[2,3],
+    7:[2,3],
+    8:[2,3],
+    9:[2,3],
+    10:[2,3],
+}
+
+for subject in subjects:
+    env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=5, subject=subject, exercise=2) 
     obs = env.reset() 
     env.render()
     r_sum = 0.0
     d = False
-    while not d:
+    #while not d:
+    for i in range(1000): # show the first 1000 steps of each subject
         action = env.action_space.sample()
         #action = np.zeros(len(env.action_space.sample()))
         obs, r, d, info = env.step(action)
         r_sum += r
         #time.sleep(0.07)
-        env.render()
+        env.render() # TODO: remove for faster simulation
     print(r_sum)
-env.close()
+    env.close()

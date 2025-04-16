@@ -13,9 +13,8 @@ TWO_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/han
 print(TWO_HAND_XML)
 
 class BaseHandEnv(RobotEnv, utils.EzPickle):
-    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', datapath="~", subject=1, exercise=2, subsampling:int=1):
+    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', n_substeps:int=20, datapath="~", subject=1, exercise=2, subsampling:int=1):
         utils.EzPickle.__init__(self, target_position, target_rotation, reward_type)
-
 
         # Load subject data
         print(f"Subject {subject}, Exercise {exercise}")
@@ -23,14 +22,13 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         data2_path = pathlib.Path(f"{datapath}/s_{subject+67}_angles/s_{subject+67}_angles/S{subject+67}_E{exercise}_A1.mat")
         self.loader = dataloader(data1_path, data2_path, subsampling=subsampling)
         self.sample_counter = 0
-        #self._max_episode_steps = None # Run indefinitely
+        #self._max_episode_steps = None # Run indefinitely (set when registering environment)
 
         self.n_actions = 40 # Two static hands with only joints moving
-        n_substeps=20
+        n_substeps=n_substeps
         initial_qpos = {}
         relative_control = False   
 
-        
         #super(RobotEnv, self).__init__(
         #    model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
         #)
@@ -60,13 +58,6 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
     # RobotEnv methods
     # ----------------------------
-    def _is_success(self, achieved_goal, desired_goal):
-        d_pos, d_rot = self._goal_distance(achieved_goal, desired_goal)
-        achieved_pos = (d_pos < self.distance_threshold).astype(np.float32)
-        achieved_rot = (d_rot < self.rotation_threshold).astype(np.float32)
-        achieved_both = achieved_pos * achieved_rot
-        return achieved_both
-
     def _env_setup(self, initial_qpos):
         for name, value in initial_qpos.items():
             self.sim.data.set_joint_qpos(name, value)
@@ -86,8 +77,8 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         return True 
 
     def _sample_goal(self):
-        # TODO: Goal is current position for joints?
-        goal =  np.zeros(3)
+        # TODO: unused, but required by super class
+        goal =  np.zeros(1)
         return goal
 
     def _render_callback(self):
@@ -95,22 +86,15 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         self.sim.forward()
 
     def _get_obs(self):
-        robot_qpos, robot_qvel = robot_get_obs(self.sim)
-
-        # Only take controlled hand data
-        robot_qpos = robot_qpos[24::]
-        robot_qvel = robot_qvel[24::]
-
-        #achieved_goal = self._get_achieved_goal().ravel()  # this contains the current hand position?? (achieved goal??)
-        achieved_goal = np.concatenate([robot_qpos, robot_qvel]) # ??
-
+        robot_qpos, robot_qvel = robot_get_obs(self.sim) # Dynamics of both hands
         obs = self.loader.get_sample(self.sample_counter) # Current sample (EMG + Desired Pose)
-        observation = np.concatenate([robot_qpos, robot_qvel, obs[0:16]]) # Current hand dynamics + EMG
+
+        observation = np.concatenate([robot_qpos[24::], robot_qvel[24::], obs[0:16]]) # Controlled hand dynamics + EMG
 
         return {
             'observation': observation.copy(),
-            'achieved_goal': achieved_goal.copy(),
-            'desired_goal': self.goal.ravel().copy(),
+            'achieved_goal': observation.copy(), # unused
+            'desired_goal': self.goal.ravel().copy(), # unused
         }
 
     def _viewer_setup(self):
@@ -126,10 +110,10 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
 
 class TwoHands(BaseHandEnv):
-    def __init__(self, direction=1, alpha=1.0, datapath="~", subject=1, exercise=2, subsampling:int=1):
+    def __init__(self, direction=1, alpha=1.0, datapath="~", n_substeps:int=20, subject=1, exercise=2, subsampling:int=1):
         self.direction = direction #-1 or 1
         self.alpha = alpha
-        super(TwoHands, self).__init__(datapath=datapath, subject=subject, exercise=exercise, subsampling=subsampling)
+        super(TwoHands, self).__init__(datapath=datapath, n_substeps=n_substeps, subject=subject, exercise=exercise, subsampling=subsampling)
         #self.bottom_id = self.sim.model.site_name2id("object:bottom")
         #self.top_id = self.sim.model.site_name2id("object:top")
         self.observation_space = self.observation_space["observation"]
@@ -139,8 +123,10 @@ class TwoHands(BaseHandEnv):
         ref_action = self.loader.get_sample(self.sample_counter)[16::] # Get hand pose reference
         self.sample_counter += 1
         done = False
-        if self.sample_counter >= self.loader.get_num_samples():
+        if self.sample_counter >= self.loader.get_num_samples()-1:
             done = True
+
+        #print(f"Num samples: {self.sample_counter}, total: {self.loader.get_num_samples()}")
         
         action = np.clip(action, self.action_space.low, self.action_space.high)
         ref_action = np.clip(ref_action, self.action_space.low, self.action_space.high)
@@ -149,7 +135,7 @@ class TwoHands(BaseHandEnv):
         self._set_action(action)
         self.sim.step()
 
-        self._step_callback() # ?
+        self._step_callback() # not implemented
 
         obs = self._get_obs()
         info = {}
@@ -169,6 +155,6 @@ class TwoHands(BaseHandEnv):
         did_reset_sim = False
         while not did_reset_sim:
             did_reset_sim = self._reset_sim()
-        self.goal = np.array([10000,10000,10000,0,0,0,0]) #hide offscreen
+        self.goal = np.zeros(1) # unused but required
         obs = self._get_obs()["observation"]
         return obs
