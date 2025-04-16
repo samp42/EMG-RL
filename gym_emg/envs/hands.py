@@ -97,6 +97,10 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
     def _get_obs(self):
         robot_qpos, robot_qvel = robot_get_obs(self.sim)
 
+        # Only take controlled hand data
+        robot_qpos = robot_qpos[24::]
+        robot_qvel = robot_qvel[24::]
+
         #achieved_goal = self._get_achieved_goal().ravel()  # this contains the current hand position?? (achieved goal??)
         achieved_goal = np.concatenate([robot_qpos, robot_qvel]) # ??
 
@@ -156,6 +160,7 @@ class TwoHands(BaseHandEnv):
         # Reward is based on current position vs desired position (could also add penalty if static when it shouldnt, but would work better in multi-goal)
 
         # TODO: for now reward is negative of norm between target vs current
+        # https://ras.papercept.net/images/temp/IROS/files/0530.pdf
         diff = self.action[0:int(self.n_actions/2)] - self.action[int(self.n_actions/2)::]
         reward = -np.linalg.norm(diff)
         return self.alpha * reward
