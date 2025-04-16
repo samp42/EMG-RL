@@ -209,7 +209,7 @@ sim2glove = {
 
 class dataloader:
 
-    def __init__(self, file):
+    def __init__(self, data1, data2, subsampling:int=1):
         # Quick and dirty mapping: assume range for each joint given exercise => map angle and then map from -1 to 1
         # For drifting, low-pass filter?
 
@@ -271,12 +271,20 @@ class dataloader:
 
         # Load data
         # TODO: combine all together into one big signal?
-        self.data = scipy.io.loadmat(file)
-        joints = self.data["angles"] # Calibrated data
+        self.data1 = scipy.io.loadmat(data1) # all data
+        self.data2 = scipy.io.loadmat(data2) # calibrated gloves
+
+        self.emg = self.data1["emg"][::subsampling, :]
+        print(self.emg.shape)
+        #plt.plot(self.emg[:,1])
+        #plt.show()
+
+        joints = self.data2["angles"] # Calibrated data
         #for joint in range(len(joints[0,:])):
         #    print(joint)
         #    plt.plot(joints[:,joint])
         #    plt.show()
+        print(joints.shape)
 
         # TODO: find middle point using median of half of ordered points and use this as baseline?
 
@@ -299,10 +307,11 @@ class dataloader:
         ACTION_SPACE_SIZE = 20
         self.pose = np.zeros((joints.shape[0],ACTION_SPACE_SIZE))
         self.pose[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.keys())]
+        self.pose = self.pose[::subsampling, :]
 
     def get_sample(self, index):
         # Sample is observation (EMG, Pose)
-        return self.pose[index,:]
+        return np.concatenate((self.emg[index,:], self.pose[index,:]))
         
     def get_num_samples(self):
         return len(self.pose[:,0])

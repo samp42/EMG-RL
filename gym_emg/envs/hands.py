@@ -13,7 +13,7 @@ TWO_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/han
 print(TWO_HAND_XML)
 
 class BaseHandEnv(RobotEnv, utils.EzPickle):
-    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', datapath="~", subject=1, exercise=2):
+    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', datapath="~", subject=1, exercise=2, subsampling:int=1):
         utils.EzPickle.__init__(self, target_position, target_rotation, reward_type)
 
 
@@ -21,8 +21,7 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         print(f"Subject {subject}, Exercise {exercise}")
         data1_path = pathlib.Path(f"{datapath}/s{subject}/S{subject}_E{exercise}_A1.mat")
         data2_path = pathlib.Path(f"{datapath}/s_{subject+67}_angles/s_{subject+67}_angles/S{subject+67}_E{exercise}_A1.mat")
-        # TODO: pass both paths to dataloader
-        self.loader = dataloader(data2_path)
+        self.loader = dataloader(data1_path, data2_path, subsampling=subsampling)
         self.sample_counter = 0
         #self._max_episode_steps = None # Run indefinitely
 
@@ -96,14 +95,14 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         self.sim.forward()
 
     def _get_obs(self):
-        # TODO: Observe current robot position AND EMG samples
         robot_qpos, robot_qvel = robot_get_obs(self.sim)
+
         #achieved_goal = self._get_achieved_goal().ravel()  # this contains the current hand position?? (achieved goal??)
-        achieved_goal = np.concatenate([robot_qpos, robot_qvel])
+        achieved_goal = np.concatenate([robot_qpos, robot_qvel]) # ??
 
-        obs = self.loader.get_sample(self.sample_counter) # Current sample + controlled hand position
+        obs = self.loader.get_sample(self.sample_counter) # Current sample (EMG + Desired Pose)
+        observation = np.concatenate([robot_qpos, robot_qvel, obs[0:16]]) # Current hand dynamics + EMG
 
-        observation = np.concatenate([robot_qpos, robot_qvel, achieved_goal])
         return {
             'observation': observation.copy(),
             'achieved_goal': achieved_goal.copy(),
@@ -123,25 +122,26 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
 
 class TwoHands(BaseHandEnv):
-    def __init__(self, direction=1, alpha=1.0, datapath="~", subject=1, exercise=2):
+    def __init__(self, direction=1, alpha=1.0, datapath="~", subject=1, exercise=2, subsampling:int=1):
         self.direction = direction #-1 or 1
         self.alpha = alpha
-        super(TwoHands, self).__init__(datapath=datapath, subject=subject, exercise=exercise)
+        super(TwoHands, self).__init__(datapath=datapath, subject=subject, exercise=exercise, subsampling=subsampling)
         #self.bottom_id = self.sim.model.site_name2id("object:bottom")
         #self.top_id = self.sim.model.site_name2id("object:top")
         self.observation_space = self.observation_space["observation"]
 
     def step(self, action):
         # Action should only be for controlled hand, not reference
-        action1 = self.loader.get_sample(self.sample_counter*50) # Get hand pose reference
+        ref_action = self.loader.get_sample(self.sample_counter)[16::] # Get hand pose reference
         self.sample_counter += 1
         done = False
         if self.sample_counter >= self.loader.get_num_samples():
             done = True
         
         action = np.clip(action, self.action_space.low, self.action_space.high)
-        action1 = np.clip(action1, self.action_space.low, self.action_space.high)
-        action = np.concatenate((action, action1)) # Need to concatenate after due to action space size
+        ref_action = np.clip(ref_action, self.action_space.low, self.action_space.high)
+        action = np.concatenate((action, ref_action)) # Need to concatenate after due to action space size
+        self.action = action
         self._set_action(action)
         self.sim.step()
 
@@ -154,9 +154,11 @@ class TwoHands(BaseHandEnv):
 
     def compute_reward(self):
         # Reward is based on current position vs desired position (could also add penalty if static when it shouldnt, but would work better in multi-goal)
-        reward_1 = 0 # Used to be based on Pen position
-        reward_2 = 0 # Used to be based on Pen velocity
-        return self.alpha * reward_2 + reward_1
+
+        # TODO: for now reward is negative of norm between target vs current
+        diff = self.action[0:int(self.n_actions/2)] - self.action[int(self.n_actions/2)::]
+        reward = -np.linalg.norm(diff)
+        return self.alpha * reward
 
     def reset(self):
         did_reset_sim = False

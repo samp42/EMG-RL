@@ -13,7 +13,7 @@ name = 'gym_emg/SingleHand-v0'
 name = 'gym_emg/TwoHands-v0'
 print(name)
 datapath = f"{pathlib.Path('~').expanduser()}/Desktop/COMP579/data"
-env = gym.make(name, datapath=datapath, subject=2, exercise=2) # This will also take care of registering the environment
+env = gym.make(name, datapath=datapath, subject=2, exercise=2, subsampling=20) # This will also take care of registering the environment
 
 
 d = False
