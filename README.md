@@ -35,3 +35,12 @@ Navigate to the repo top-level and run:
 ```
 pip install -e .
 ```
+
+
+# Data
+Download the DB5 data (with uncalibrated CyberGlove data) from https://ninapro.hevs.ch/instructions/DB5.html
+Download the DB5 CyberGlove calibrated data (s68 to s77) from https://ninapro.hevs.ch/instructions/DB9.html
+
+Copy the all the data into a "data" directory.
+
+

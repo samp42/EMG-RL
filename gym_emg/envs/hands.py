@@ -1,38 +1,58 @@
+import mujoco_py
 import numpy as np
 import os
-from gym import utils, error
+from gym import utils, error, spaces
 from gym.envs.robotics.utils import robot_get_obs
 from gym.envs.robotics import rotations, hand_env
 from dexterous_gym.core.two_hand_robot_env import RobotEnv
 import pathlib
 
-from dataloader import dataloader
+from .dataloader import dataloader
 
 TWO_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/hand/2hands.xml')
 print(TWO_HAND_XML)
 
 class BaseHandEnv(RobotEnv, utils.EzPickle):
-    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse'):
+    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', datapath="~", subject=1, exercise=2):
         utils.EzPickle.__init__(self, target_position, target_rotation, reward_type)
+
+
+        # Load subject data
+        print(f"Subject {subject}, Exercise {exercise}")
+        data1_path = pathlib.Path(f"{datapath}/s{subject}/S{subject}_E{exercise}_A1.mat")
+        data2_path = pathlib.Path(f"{datapath}/s_{subject+67}_angles/s_{subject+67}_angles/S{subject+67}_E{exercise}_A1.mat")
+        # TODO: pass both paths to dataloader
+        self.loader = dataloader(data2_path)
+        self.sample_counter = 0
+        #self._max_episode_steps = None # Run indefinitely
 
         self.n_actions = 40 # Two static hands with only joints moving
         n_substeps=20
         initial_qpos = {}
         relative_control = False   
 
-        """
-        super(RobotEnv, self).__init__(
-            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
-        )
-        """
+        
+        #super(RobotEnv, self).__init__(
+        #    model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
+        #)
         RobotEnv.__init__(self,
-            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
+            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos, 
         )
+
+        # Define action space and observation space
+        n_actions = 20
+        obs = self._get_obs()
+        self.action_space = spaces.Box(-1., 1., shape=(n_actions,), dtype='float32')
+        self.observation_space = spaces.Dict(dict(
+            desired_goal=spaces.Box(-np.inf, np.inf, shape=obs['achieved_goal'].shape, dtype='float32'),
+            achieved_goal=spaces.Box(-np.inf, np.inf, shape=obs['achieved_goal'].shape, dtype='float32'),
+            observation=spaces.Box(-np.inf, np.inf, shape=obs['observation'].shape, dtype='float32'),
+        ))
 
     # TwoHandsEnv methods
     # ----------------------------
     def _set_action(self, action):
-        assert action.shape == (self.n_actions,)
+        #assert action.shape == (self.n_actions,)
         ctrlrange = self.sim.model.actuator_ctrlrange
         actuation_range = (ctrlrange[:, 1] - ctrlrange[:, 0]) / 2.0
         actuation_centre = (ctrlrange[:, 1] + ctrlrange[:, 0]) / 2.0
@@ -64,11 +84,11 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
                 self.sim.step()
             except mujoco_py.MujocoException:
                 return False
-        return True # Return True?
+        return True 
 
     def _sample_goal(self):
-        # Goal is current position for joints
-        goal =  np.array([0., 0., 1.])
+        # TODO: Goal is current position for joints?
+        goal =  np.zeros(3)
         return goal
 
     def _render_callback(self):
@@ -76,10 +96,13 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         self.sim.forward()
 
     def _get_obs(self):
-        # Observe current robot position AND EMG samples
+        # TODO: Observe current robot position AND EMG samples
         robot_qpos, robot_qvel = robot_get_obs(self.sim)
         #achieved_goal = self._get_achieved_goal().ravel()  # this contains the current hand position?? (achieved goal??)
         achieved_goal = np.concatenate([robot_qpos, robot_qvel])
+
+        obs = self.loader.get_sample(self.sample_counter) # Current sample + controlled hand position
+
         observation = np.concatenate([robot_qpos, robot_qvel, achieved_goal])
         return {
             'observation': observation.copy(),
@@ -100,29 +123,25 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
 
 class TwoHands(BaseHandEnv):
-    def __init__(self, direction=1, alpha=1.0, subject=1, exercise=2):
+    def __init__(self, direction=1, alpha=1.0, datapath="~", subject=1, exercise=2):
         self.direction = direction #-1 or 1
         self.alpha = alpha
-        super(TwoHands, self).__init__()
+        super(TwoHands, self).__init__(datapath=datapath, subject=subject, exercise=exercise)
         #self.bottom_id = self.sim.model.site_name2id("object:bottom")
         #self.top_id = self.sim.model.site_name2id("object:top")
-        self._max_episode_steps = 2000
         self.observation_space = self.observation_space["observation"]
 
-        # Load subject data
-        self.loader = dataloader(f"~/Desktop/COMP579/s{subject}-cal/S{subject}_E{exercise}_A1.mat")
-        self.sample_counter = 0
-
     def step(self, action):
-
-        action1 = self.loader.get_sample(sample_counter) # Get hand pose reference
-        sample_counter += 1
+        # Action should only be for controlled hand, not reference
+        action1 = self.loader.get_sample(self.sample_counter*50) # Get hand pose reference
+        self.sample_counter += 1
         done = False
-        if sample_counter >= loader.get_num_samples():
+        if self.sample_counter >= self.loader.get_num_samples():
             done = True
         
-        action = np.concatenate(action, action1)
         action = np.clip(action, self.action_space.low, self.action_space.high)
+        action1 = np.clip(action1, self.action_space.low, self.action_space.high)
+        action = np.concatenate((action, action1)) # Need to concatenate after due to action space size
         self._set_action(action)
         self.sim.step()
 
@@ -134,7 +153,7 @@ class TwoHands(BaseHandEnv):
         return obs["observation"], reward, done, info
 
     def compute_reward(self):
-        # Reward is based on current position vs desired position
+        # Reward is based on current position vs desired position (could also add penalty if static when it shouldnt, but would work better in multi-goal)
         reward_1 = 0 # Used to be based on Pen position
         reward_2 = 0 # Used to be based on Pen velocity
         return self.alpha * reward_2 + reward_1
