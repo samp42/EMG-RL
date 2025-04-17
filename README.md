@@ -7,7 +7,7 @@ See [here](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manag
 To install the necessary packages, run:
 
 ```bash
-conda create -n emg-rl python=3.12
+conda create -n emg-rl python=3.10
 conda activate emg-rl
 pip install -r requirements.txt
 ```

@@ -1,11 +1,12 @@
 import numpy as np
 import os
-from gym import utils, error
-from gym.envs.robotics.hand.manipulate import ManipulateEnv, HandPenEnv
-from gym.envs.robotics.utils import robot_get_obs
-from gym.envs.robotics import rotations, hand_env
-
-import gym.envs.robotics.hand.manipulate as module
+from gymnasium import utils, error
+import mujoco
+# from gym.envs.robotics.hand.manipulate import ManipulateEnv, HandPenEnv
+# from gym.envs.robotics.utils import robot_get_obs
+# from gym.envs.robotics import rotations, hand_env
+from gymnasium_robotics import hand_env
+# import gym.envs.robotics.hand.manipulate as module
 
 L = "/home/jacobyroy/miniconda3/envs/emg_rl/lib/python3.8/site-packages/gym/envs/robotics/assets"
 
@@ -50,7 +51,7 @@ class BaseHandEnv(hand_env.HandEnv, utils.EzPickle):
             self._set_action(np.zeros(20))
             try:
                 self.sim.step()
-            except mujoco_py.MujocoException:
+            except mujoco.MujocoException:
                 return False
         return True # Return True?
 

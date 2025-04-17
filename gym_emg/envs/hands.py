@@ -1,9 +1,11 @@
-import mujoco_py
+# import mujoco_py
+import mujoco
 import numpy as np
 import os
-from gym import utils, error, spaces
-from gym.envs.robotics.utils import robot_get_obs
-from gym.envs.robotics import rotations, hand_env
+from gymnasium import utils, error, spaces
+from gymnasium_robotics.utils import robot_get_obs
+# from gym.envs.robotics.utils import robot_get_obs
+# from gym.envs.robotics import rotations, hand_env
 from dexterous_gym.core.two_hand_robot_env import RobotEnv
 import pathlib
 

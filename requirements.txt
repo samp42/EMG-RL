@@ -2,8 +2,11 @@ gym
 torch
 torchvision
 matplotlib
-sb3-contrib
+scipy
+stable-baselines3[extra]
 swig
 gymnasium[box2d]
 shimmy>=2.0
 tqdm
+mujoco
+gym-robotics

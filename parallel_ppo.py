@@ -7,6 +7,8 @@ from tqdm import tqdm
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from typing import Tuple, Dict, Optional, Callable
 import gymnasium as gym
+import gymnasium_robotics
+import gym_emg
 
 def make_env(env_fn, seed=0):
     def _init():
@@ -14,6 +16,13 @@ def make_env(env_fn, seed=0):
         env.reset(seed=seed + np.random.randint(0, 1000))  # Different seed for each env
         return env
     return _init
+
+def initialize_weights(module):
+    if isinstance(module, nn.Linear):
+        # nn.init.xavier_uniform_(module.weight, gain=0.01)
+        torch.nn.init.orthogonal_(module.weight, gain=0.01)
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)
 
 class ActorCritic(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_dim=256):
@@ -32,6 +41,9 @@ class ActorCritic(nn.Module):
 
         # Critic
         self.value = nn.Linear(hidden_dim, 1)
+
+        # Initialize weights
+        self.apply(initialize_weights)
 
     def forward(self, x):
         """Returns action, log probability of action, and value"""
@@ -66,7 +78,7 @@ class RolloutBuffer:
     def add(self, obs, action, logprob, reward, done, value):
         self.observations[self.pos] = obs
         self.actions[self.pos] = action
-        self.logprobs[self.pos] = logprob
+        self.logprobs[self.pos] = logprob.flatten()
         self.rewards[self.pos] = reward
         self.dones[self.pos] = done
         self.values[self.pos] = value
@@ -122,7 +134,7 @@ class RolloutBuffer:
 class PPO:
     def __init__(self, env_fn: Callable, policy_class: nn.Module, num_envs=8, n_steps=2048, epochs=10, batch_size=256,
                  gamma=0.99, gae_lambda=0.95, clip_range=0.2, clip_range_vf=None, ent_coef=0.0, vf_coef=0.5,
-                 max_grad_norm=0.5, learning_rate=3e-4, update_epochs=10, device=None):
+                 max_grad_norm=0.5, learning_rate=3e-4, device=None):
 
         self.env = SubprocVecEnv([make_env(env_fn, seed=i) for i in range(num_envs)])
         self.num_envs = num_envs
@@ -137,22 +149,20 @@ class PPO:
         self.ent_coef = ent_coef
         self.max_grad_norm = max_grad_norm
         self.learning_rate = learning_rate
-        self.update_epochs = update_epochs
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        self.best_mean_reward = -np.inf
+
         # Get observation and action spaces
-        print("Observation space:", self.env.observation_space)
-        print("Action space:", self.env.action_space)
         obs_shape = self.env.observation_space.shape
         action_dim = self.env.action_space.shape[0]
 
         # Initialize policy and optimizer
-        self.policy = policy_class(obs_shape, action_dim).to(device)
+        self.policy = policy_class(obs_shape[0], action_dim).to(device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
 
         self.rollout_buffer = RolloutBuffer(n_steps, num_envs, obs_shape, action_dim)
 
-        self.ep_info_buffer = []
         self.current_obs = self.env.reset()
 
     def collect_rollouts(self) -> bool:
@@ -170,7 +180,16 @@ class PPO:
                 logprobs = logprobs.cpu().numpy()
 
             # Execute in environment
-            next_obs, rewards, dones, infos = self.env.step(actions)
+            actions = np.clip(actions, self.env.action_space.low, self.env.action_space.high)
+            next_obs, rewards, dones, _ = self.env.step(actions)
+
+            for i, done in enumerate(dones):
+                if done:
+                    next_obs[i] = self.env.reset()[i]  # Reset the specific environment
+
+            if np.mean(rewards) > self.best_mean_reward:
+                self.best_mean_reward = np.mean(rewards)
+                torch.save(self.policy.state_dict(), "best_model_ppo.pth")
 
             self.rollout_buffer.add(
                 self.current_obs,
@@ -182,11 +201,6 @@ class PPO:
             )
 
             self.current_obs = next_obs
-
-            # Process episode info
-            for info in infos:
-                if "episode" in info:
-                    self.ep_info_buffer.append(info["episode"])
 
         # Compute returns and advantages
         with torch.no_grad():
@@ -206,7 +220,7 @@ class PPO:
         loss_vf = 0.0
         loss_ent = 0.0
 
-        for epoch in tqdm(range(self.epochs), desc="Training", position=0, leave=True):
+        for _ in range(self.epochs):
             for batch_data in self.rollout_buffer.get(self.batch_size):
                 obs, actions, old_logprobs, advantages, returns = batch_data
 
@@ -218,7 +232,7 @@ class PPO:
                 returns_tensor = torch.as_tensor(returns).float().to(self.device)
 
                 # Normalize advantages
-                advantages_tensor = (advantages_tensor - advantages_tensor.mean()) / (advantages_tensor.std() + 1e-8)
+                advantages_tensor = (advantages_tensor - advantages_tensor.mean()) / (advantages_tensor.std() + 1e-5)
 
                 # Get current policy outputs
                 logprobs, entropy, values = self.policy.evaluate_actions(obs_tensor, actions_tensor)
@@ -234,8 +248,8 @@ class PPO:
                 if self.clip_range_vf is None:
                     value_loss = 0.5 * ((returns_tensor - values) ** 2).mean()
                 else:
-                    values_clipped = old_logprobs_tensor + torch.clamp(
-                        values - old_logprobs_tensor,
+                    values_clipped = self.rollout_buffer.values + torch.clamp(
+                        values - self.rollout_buffer.values,
                         -self.clip_range_vf,
                         self.clip_range_vf
                     )
@@ -277,51 +291,56 @@ class PPO:
         }
 
     def learn(self, total_timesteps: int):
+        assert total_timesteps % (self.n_steps * self.num_envs) == 0, "Total timesteps must be divisible by n_steps * num_envs"
         num_timesteps = 0
 
-        with tqdm(total=total_timesteps, desc="Training", position=0, leave=True) as pbar:
-            while num_timesteps < total_timesteps:
-                # Collect rollouts
-                self.collect_rollouts()
+        pbar = tqdm(total=total_timesteps, desc="Training", position=0, leave=True)
+        while num_timesteps < total_timesteps:
+            # Collect rollouts
+            self.collect_rollouts()
 
-                # Train on collected data
-                train_stats = self.train()
+            self.train()
 
-                # Update timestep counter
-                num_timesteps += self.n_steps * self.num_envs
+            # Update timestep counter
+            num_timesteps += self.n_steps * self.num_envs
 
-                tqdm.update(pbar, n=num_timesteps)
+            pbar.update(self.n_steps * self.num_envs)
 
-                # Logging (you would replace this with your preferred logging method)
-                if len(self.ep_info_buffer) > 0:
-                    avg_reward = np.mean([ep_info["r"] for ep_info in self.ep_info_buffer])
-                    avg_length = np.mean([ep_info["l"] for ep_info in self.ep_info_buffer])
-                    tqdm.write(f"Step: {num_timesteps}, Reward: {avg_reward:.2f}, Length: {avg_length:.2f}")
-                    self.ep_info_buffer = []
+            # Mean cumulative reward per episode
 
-                # Print training stats
-                tqdm.write(", ".join([f"{k}: {v:.3f}" for k, v in train_stats.items()]))
+            # pbar.set_postfix(mean_reward=mean_reward)
 
-            return self
+        return self
 
 
 if __name__ == "__main__":
     def create_env():
-        env = gym.make("LunarLander-v3", render_mode="human")
+        # gym.register_envs(gymnasium_robotics)
+        # env = gym.make("MountainCarContinuous-v0", max_episode_steps=1024)
+        env = gym.make('InvertedPendulum-v5')
         return env
+    
+    n_envs = 8
+    n_steps = 1000
+    epochs = 10
+    total_timesteps = n_envs * n_steps * 1000 #n_envs * n_steps * epochs
 
     ppo = PPO(
         env_fn=create_env,
         policy_class=ActorCritic,
-        num_envs=2,
-        n_steps=2048,
-        epochs=10,
-        batch_size=256,
+        num_envs=n_envs,
+        n_steps=n_steps,
+        epochs=epochs,
+        batch_size=64,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
         learning_rate=3e-4,
-        update_epochs=10
+        ent_coef=0.008,
+        vf_coef=0.2,
+        max_grad_norm=0.5,
+        clip_range_vf=None,
+        device='cpu',
     )
 
-    ppo.learn(total_timesteps=50000)
+    ppo.learn(total_timesteps=total_timesteps)
