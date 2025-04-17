@@ -161,7 +161,6 @@ class PPO:
 
         for step in range(self.n_steps):
             with torch.no_grad():
-                # Convert to tensor
                 obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
 
                 # Get actions and values
@@ -173,7 +172,6 @@ class PPO:
             # Execute in environment
             next_obs, rewards, dones, infos = self.env.step(actions)
 
-            # Store transition in buffer
             self.rollout_buffer.add(
                 self.current_obs,
                 actions,
@@ -183,7 +181,6 @@ class PPO:
                 values
             )
 
-            # Update current observation
             self.current_obs = next_obs
 
             # Process episode info
@@ -283,8 +280,6 @@ class PPO:
         num_timesteps = 0
 
         with tqdm(total=total_timesteps, desc="Training", position=0, leave=True) as pbar:
-            # pbar.n = 0
-            # pbar.refresh()
             while num_timesteps < total_timesteps:
                 # Collect rollouts
                 self.collect_rollouts()

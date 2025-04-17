@@ -1,0 +1,16 @@
+name: test
+channels:
+  - conda-forge
+  - hcc
+  - base
+  - pypi
+  - pytorch
+  - nvidia
+dependencies:
+  - numpy
+  - pytorch
+  - pytorch-cuda
+  # This Cython version fixes a compile error with MuJoCo install
+  # - Cython=3.0.0a10
+  - gym
+  #- dexterous-gym=0.1.7
