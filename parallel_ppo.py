@@ -315,8 +315,8 @@ class PPO:
 
 
 if __name__ == "__main__":
-    name = 'gym_emg/SingleHand-v0'
-    # name = 'gym_emg/TwoHands-v0'
+    # name = 'gym_emg/SingleHand-v0'
+    name = 'gym_emg/TwoHands-v0'
     datapath = f"{pathlib.Path('~').expanduser()}/code/EMG-RL/data"
 
     def create_env():
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         # env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=1, subject=2, exercise=3)
         env = gym.make(name)
         return env
-    
+
     n_envs = 1
     n_steps = 1000
     epochs = 10

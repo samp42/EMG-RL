@@ -6,7 +6,7 @@ from gymnasium import utils, error, spaces
 from gymnasium_robotics.utils.mujoco_utils import robot_get_obs
 # from gym.envs.robotics.utils import robot_get_obs
 # from gym.envs.robotics import rotations, hand_env
-from dexterous_gym.core.two_hand_robot_env import RobotEnv
+from dexterous_gym.two_hand_robot_env import RobotEnv
 import pathlib
 
 from .dataloader import dataloader
@@ -29,13 +29,13 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         self.n_actions = 40 # Two static hands with only joints moving
         n_substeps=n_substeps
         initial_qpos = {}
-        relative_control = False   
+        relative_control = False
 
         #super(RobotEnv, self).__init__(
         #    model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
         #)
         RobotEnv.__init__(self,
-            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos, 
+            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos,
         )
 
         # Define action space and observation space
@@ -52,22 +52,22 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
     # ----------------------------
     def _set_action(self, action):
         #assert action.shape == (self.n_actions,)
-        ctrlrange = self.sim.model.actuator_ctrlrange
+        ctrlrange = self.model.actuator_ctrlrange
         actuation_range = (ctrlrange[:, 1] - ctrlrange[:, 0]) / 2.0
         actuation_centre = (ctrlrange[:, 1] + ctrlrange[:, 0]) / 2.0
-        self.sim.data.ctrl[:] = actuation_centre + action*actuation_range
-        self.sim.data.ctrl[:] = np.clip(self.sim.data.ctrl, ctrlrange[:, 0], ctrlrange[:, 1])
+        self.data.ctrl[:] = actuation_centre + action*actuation_range
+        self.data.ctrl[:] = np.clip(self.data.ctrl, ctrlrange[:, 0], ctrlrange[:, 1])
 
     # RobotEnv methods
     # ----------------------------
     def _env_setup(self, initial_qpos):
         for name, value in initial_qpos.items():
-            self.sim.data.set_joint_qpos(name, value)
-        self.sim.forward()
+            self.data.set_joint_qpos(name, value)
+        self.forward()
 
     def _reset_sim(self):
-        self.sim.set_state(self.initial_state)
-        self.sim.forward()
+        self.set_state(self.initial_state)
+        self.forward()
 
         # Run the simulation for a bunch of timesteps to let everything settle in.
         for _ in range(10):
@@ -76,7 +76,7 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
                 self.sim.step()
             except mujoco.MujocoException:
                 return False
-        return True 
+        return True
 
     def _sample_goal(self):
         # TODO: unused, but required by super class
@@ -85,10 +85,10 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
     def _render_callback(self):
         # Render sim
-        self.sim.forward()
+        self.forward()
 
     def _get_obs(self):
-        robot_qpos, robot_qvel = robot_get_obs(self.sim) # Dynamics of both hands
+        robot_qpos, robot_qvel = robot_get_obs(self.model, self.data) # Dynamics of both hands
         obs = self.loader.get_sample(self.sample_counter) # Current sample (EMG + Desired Pose)
 
         observation = np.concatenate([robot_qpos[24::], robot_qvel[24::], obs[0:16]]) # Controlled hand dynamics + EMG
@@ -101,9 +101,9 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
     def _viewer_setup(self):
         # body_id = self.sim.model.body_name2id('robot0:palm')
-        middle_id = self.sim.model.site_name2id('centre-point')
+        middle_id = self.model.site_name2id('centre-point')
         # lookat = self.sim.data.body_xpos[body_id]
-        lookat = self.sim.data.site_xpos[middle_id]
+        lookat = self.data.site_xpos[middle_id]
         for idx, value in enumerate(lookat):
             self.viewer.cam.lookat[idx] = value
         self.viewer.cam.distance = 1.5
@@ -129,13 +129,13 @@ class TwoHands(BaseHandEnv):
             done = True
 
         #print(f"Num samples: {self.sample_counter}, total: {self.loader.get_num_samples()}")
-        
+
         action = np.clip(action, self.action_space.low, self.action_space.high)
         ref_action = np.clip(ref_action, self.action_space.low, self.action_space.high)
         action = np.concatenate((action, ref_action)) # Need to concatenate after due to action space size
         self.action = action
         self._set_action(action)
-        self.sim.step()
+        self.step()
 
         self._step_callback() # not implemented
 
