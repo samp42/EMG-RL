@@ -7,5 +7,5 @@ setup(name='EMG-RL',
         '': ['*.csv', '*.npy'],
       },      
       version='0.0.1',
-      install_requires=['gym', 'numpy', 'pandas']
+      install_requires=['gymnasium', 'numpy', 'pandas']
 )

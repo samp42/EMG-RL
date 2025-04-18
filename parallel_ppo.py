@@ -7,7 +7,8 @@ from tqdm import tqdm
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from typing import Tuple, Dict, Optional, Callable
 import gymnasium as gym
-import gymnasium_robotics
+import pathlib
+# import gymnasium_robotics
 import gym_emg
 
 def make_env(env_fn, seed=0):
@@ -314,13 +315,18 @@ class PPO:
 
 
 if __name__ == "__main__":
+    name = 'gym_emg/SingleHand-v0'
+    # name = 'gym_emg/TwoHands-v0'
+    datapath = f"{pathlib.Path('~').expanduser()}/code/EMG-RL/data"
+
     def create_env():
         # gym.register_envs(gymnasium_robotics)
         # env = gym.make("MountainCarContinuous-v0", max_episode_steps=1024)
-        env = gym.make('InvertedPendulum-v5')
+        # env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=1, subject=2, exercise=3)
+        env = gym.make(name)
         return env
     
-    n_envs = 8
+    n_envs = 1
     n_steps = 1000
     epochs = 10
     total_timesteps = n_envs * n_steps * 1000 #n_envs * n_steps * epochs

@@ -3,7 +3,7 @@ import mujoco
 import numpy as np
 import os
 from gymnasium import utils, error, spaces
-from gymnasium_robotics.utils import robot_get_obs
+from gymnasium_robotics.utils.mujoco_utils import robot_get_obs
 # from gym.envs.robotics.utils import robot_get_obs
 # from gym.envs.robotics import rotations, hand_env
 from dexterous_gym.core.two_hand_robot_env import RobotEnv
@@ -74,7 +74,7 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
             self._set_action(np.zeros(40))
             try:
                 self.sim.step()
-            except mujoco_py.MujocoException:
+            except mujoco.MujocoException:
                 return False
         return True 
 

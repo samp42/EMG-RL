@@ -5,10 +5,13 @@ import mujoco
 # from gym.envs.robotics.hand.manipulate import ManipulateEnv, HandPenEnv
 # from gym.envs.robotics.utils import robot_get_obs
 # from gym.envs.robotics import rotations, hand_env
-from gymnasium_robotics import hand_env
+# from gymnasium_robotics.utils import ro
+from gymnasium_robotics.utils.mujoco_utils import robot_get_obs
+import gymnasium_robotics.envs.shadow_dexterous_hand.hand_env as hand_env
 # import gym.envs.robotics.hand.manipulate as module
 
-L = "/home/jacobyroy/miniconda3/envs/emg_rl/lib/python3.8/site-packages/gym/envs/robotics/assets"
+# L = "/home/jacobyroy/miniconda3/envs/emg_rl/lib/python3.8/site-packages/gym/envs/robotics/assets"
+
 
 MANIPULATE_PEN_XML = os.path.join('hand', 'manipulate_pen.xml')
 
@@ -16,6 +19,8 @@ import pathlib
 
 MANIPULATE_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/hand/manipulate_hand.xml')
 print(MANIPULATE_HAND_XML)
+
+hand_env.HandEnv = hand_env.get_base_hand_env(hand_env.MujocoRobotEnv)
 
 class BaseHandEnv(hand_env.HandEnv, utils.EzPickle):
     def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse'):
