@@ -318,12 +318,13 @@ if __name__ == "__main__":
     # name = 'gym_emg/SingleHand-v0'
     name = 'gym_emg/TwoHands-v0'
     datapath = f"{pathlib.Path('~').expanduser()}/code/EMG-RL/data"
+    print(f"Datapath: {datapath}")
 
     def create_env():
         # gym.register_envs(gymnasium_robotics)
+        # env = gym.make(name)
         # env = gym.make("MountainCarContinuous-v0", max_episode_steps=1024)
-        # env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=1, subject=2, exercise=3)
-        env = gym.make(name)
+        env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=1, subject=2, exercise=3)
         return env
 
     n_envs = 1

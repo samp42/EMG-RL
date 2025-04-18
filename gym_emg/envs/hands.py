@@ -15,13 +15,13 @@ TWO_HAND_XML = os.path.join(pathlib.Path(__file__).parent.resolve(), 'assets/han
 print(TWO_HAND_XML)
 
 class BaseHandEnv(RobotEnv, utils.EzPickle):
-    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', n_substeps:int=20, datapath="~", subject=1, exercise=2, subsampling:int=1):
+    def __init__(self, target_position='random', target_rotation='xyz', reward_type='sparse', n_substeps:int=20, datapath="./data", subject=1, exercise=2, subsampling:int=1):
         utils.EzPickle.__init__(self, target_position, target_rotation, reward_type)
 
         # Load subject data
         print(f"Subject {subject}, Exercise {exercise}")
         data1_path = pathlib.Path(f"{datapath}/s{subject}/S{subject}_E{exercise}_A1.mat")
-        data2_path = pathlib.Path(f"{datapath}/s_{subject+67}_angles/s_{subject+67}_angles/S{subject+67}_E{exercise}_A1.mat")
+        data2_path = pathlib.Path(f"{datapath}/s_{subject+67}_angles/S{subject+67}_E{exercise}_A1.mat")
         self.loader = dataloader(data1_path, data2_path, subsampling=subsampling)
         self.sample_counter = 0
         #self._max_episode_steps = None # Run indefinitely (set when registering environment)
@@ -112,7 +112,7 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
 
 
 class TwoHands(BaseHandEnv):
-    def __init__(self, direction=1, alpha=1.0, datapath="~", n_substeps:int=20, subject=1, exercise=2, subsampling:int=1):
+    def __init__(self, direction=1, alpha=1.0, datapath="./data", n_substeps:int=20, subject=1, exercise=2, subsampling:int=1):
         self.direction = direction #-1 or 1
         self.alpha = alpha
         super(TwoHands, self).__init__(datapath=datapath, n_substeps=n_substeps, subject=subject, exercise=exercise, subsampling=subsampling)

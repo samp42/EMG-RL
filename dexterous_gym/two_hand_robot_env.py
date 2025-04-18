@@ -27,7 +27,8 @@ class RobotEnv(GoalEnv):
         if not os.path.exists(fullpath):
             raise IOError('File {} does not exist'.format(fullpath))
 
-        model = mujoco.MjModel.from_xml_string(fullpath)
+        print(f"Loading model from {fullpath}")
+        model = mujoco.MjModel.from_xml_path(fullpath)
         data = mujoco.MjData(model)
         self.n_substeps = n_substeps
         # self.sim = mujoco.MjSim(model, nsubsteps=n_substeps)
