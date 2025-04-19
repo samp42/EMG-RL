@@ -6,7 +6,8 @@ from torch.distributions.normal import Normal
 from tqdm import tqdm
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from typing import Tuple, Dict, Optional, Callable
-import gymnasium as gym
+import gym
+import csv
 
 def make_env(env_fn, seed=0):
     def _init():
@@ -124,7 +125,8 @@ class PPO:
                  gamma=0.99, gae_lambda=0.95, clip_range=0.2, clip_range_vf=None, ent_coef=0.0, vf_coef=0.5,
                  max_grad_norm=0.5, learning_rate=3e-4, update_epochs=10, device=None):
 
-        self.env = SubprocVecEnv([make_env(env_fn, seed=i) for i in range(num_envs)])
+        # self.env = SubprocVecEnv([make_env(env_fn, seed=i) for i in range(num_envs)])
+        self.env = env_fn()
         self.num_envs = num_envs
         self.n_steps = n_steps
         self.epochs = epochs
@@ -147,7 +149,7 @@ class PPO:
         action_dim = self.env.action_space.shape[0]
 
         # Initialize policy and optimizer
-        self.policy = policy_class(obs_shape, action_dim).to(device)
+        self.policy = policy_class(obs_shape[0], action_dim).to(device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
 
         self.rollout_buffer = RolloutBuffer(n_steps, num_envs, obs_shape, action_dim)
@@ -159,6 +161,7 @@ class PPO:
         self.rollout_buffer.pos = 0
         self.rollout_buffer.full = False
 
+        episode_rewards = np.zeros(self.num_envs)  # Track rewards for each environment
         for step in range(self.n_steps):
             with torch.no_grad():
                 obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
@@ -171,6 +174,8 @@ class PPO:
 
             # Execute in environment
             next_obs, rewards, dones, infos = self.env.step(actions)
+
+            episode_rewards += rewards
 
             self.rollout_buffer.add(
                 self.current_obs,
@@ -197,6 +202,13 @@ class PPO:
         self.rollout_buffer.compute_returns_and_advantage(last_values, self.gamma, self.gae_lambda)
 
         return True
+
+    def save_rewards_to_csv(self, filename="episode_rewards.csv"):
+        with open(filename, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Episode", "Reward"])
+            for i, reward in enumerate(self.episode_rewards):
+                writer.writerow([i + 1, reward])
 
     def train(self) -> Dict[str, float]:
         # Update policy for n_epochs
@@ -302,12 +314,14 @@ class PPO:
                 # Print training stats
                 tqdm.write(", ".join([f"{k}: {v:.3f}" for k, v in train_stats.items()]))
 
+            self.save_rewards_to_csv()
+
             return self
 
 
 if __name__ == "__main__":
     def create_env():
-        env = gym.make("LunarLander-v3", render_mode="human")
+        env = gym.make("CarRacing-v0")
         return env
 
     ppo = PPO(

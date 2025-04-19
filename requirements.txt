@@ -2,8 +2,8 @@ gym
 torch
 torchvision
 matplotlib
-sb3-contrib
+stable-baselines3
 swig
-gymnasium[box2d]
-shimmy>=2.0
+box2d-py
+# shimmy>=2.0
 tqdm
