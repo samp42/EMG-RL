@@ -223,54 +223,7 @@ class dataloader:
                 self.sim2glovemap[list(sim2glove[joint]["id"].keys())[0]] = list(sim2glove[joint]["id"].values())[0]-1
                 self.simmap[list(sim2glove[joint]["id"].keys())[0]] = sim2glove[joint]["simmap"]
 
-        """
         # Load data
-        # TODO: combine all together into one big signal?
-        import matplotlib.pyplot as plt
-        file = "/home/jacobyroy/Desktop/COMP579/s2/S2_E2_A1.mat"
-        self.data = scipy.io.loadmat(file)
-        joints = self.data["glove"]
-
-        # Find min/max of samples (known to be angles of mapping)
-        mins = np.min(joints, axis=0)
-        maxs = np.max(joints, axis=0)
-        print(mins[list(self.glovemap.keys())])
-        print(maxs[list(self.glovemap.keys())])
-        #plt.plot(joints[:,list(self.glovemap.keys())])
-        #plt.show()
-
-        # Apply mapping from raw glove data to angle range
-        for i in self.glovemap:
-            lmap = interp1d([mins[i], maxs[i]], self.glovemap[i], fill_value="extrapolate")
-            joints[:,i] = lmap(joints[:,i])
-        #plt.plot(joints[:,list(self.glovemap.keys())])
-        #plt.show()
-
-        # Reorder data to be in same positions of sim space (others are ignored)
-        joints[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.values())]
-        #plt.plot(joints[:,list(self.simmap.keys())])
-        #plt.show()
-
-        # Apply mapping from angle to sim
-        for i in self.simmap:
-            lmap = interp1d(self.simmap[i], [-1,1], fill_value="extrapolate")
-            joints[:,i] = lmap(joints[:,i])
-        #plt.plot(joints[:,list(self.simmap.keys())])
-        #plt.show()
-
-        # Clip data
-        joints = np.clip(joints, -1, 1)
-        #plt.plot(joints[:,list(self.simmap.keys())])
-        #plt.show()
-
-        # Only keep action values
-        ACTION_SPACE_SIZE = 20
-        self.pose = np.zeros((joints.shape[0],ACTION_SPACE_SIZE))
-        self.pose[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.keys())]
-        """
-
-        # Load data
-        # TODO: combine all together into one big signal?
         self.data1 = scipy.io.loadmat(data1) # all data
         self.data2 = scipy.io.loadmat(data2) # calibrated gloves
 
@@ -309,9 +262,85 @@ class dataloader:
         self.pose[:, list(self.sim2glovemap.keys())] = joints[:, list(self.sim2glovemap.keys())]
         self.pose = self.pose[::subsampling, :]
 
-    def get_sample(self, index):
+        # Split data into trials (keep 5 for training, 1 for testing)
+        # Each trial is an episode, call "redraw" to switch episode (picked at random)
+        # Find rising and falling edges in restimulus (start and end of trials)
+        restimulus = self.data1["restimulus"][::subsampling, :]
+        edges = [(s!=restimulus[id-1])*((s>0) + -1*(s==0)) for id,s in enumerate(restimulus)]
+
+        # Find indexes of edges
+        indexes = [id for id,s in enumerate(edges) if s!=0]
+
+        # Find ranges of samples for each trial
+        trial_ranges = []
+        last = -1
+        for i in range(int(len(indexes)/2)-1):
+            start = last+1
+            end = int((indexes[2*i+1]+indexes[2*i+2])/2)
+            trange = [start, end]
+            trial_ranges.append(trange)
+            last = end
+        trial_ranges.append([last+1, len(edges)-1])
+
+        #plt.plot(self.data1["restimulus"])
+        #plt.plot(np.ones(trial_ranges[0][1]-trial_ranges[0][0]))
+        #plt.show()
+
+        print(self.emg.shape)
+        print(self.pose.shape)
+
+        # Gather trials
+        trials = []
+        for trial_range in trial_ranges:
+            trial = np.concatenate((self.emg[trial_range[0]:trial_range[1], :], self.pose[trial_range[0]:trial_range[1], :]), axis=1)
+            trials.append(trial)
+        self.trials = trials
+
+        # For each exercise, randomly select one trial as 
+        test_ids = np.zeros(int(len(trials)/6))
+        for i in range(int(len(trials)/6)):
+            test_ids[i] = np.random.randint(i*6,(i+1)*6)
+
+        self.train_trials = [self.trials[id] for id in range(len(self.trials)) if id not in test_ids]
+        self.test_trials = [self.trials[id] for id in range(len(self.trials)) if id in test_ids]
+
+        self.current_train_trial = 0
+        self.current_test_trial = 0
+        self.set_mode()
+     
+    # Train functions
+    def get_train_sample(self, index):
         # Sample is observation (EMG, Pose)
-        return np.concatenate((self.emg[index,:], self.pose[index,:]))
+        return self.train_trials[self.current_train_trial][index]
         
-    def get_num_samples(self):
-        return len(self.pose[:,0])
+    def get_num_train_samples(self):
+        return len(self.train_trials[self.current_train_trial])
+
+    def get_num_train_trials(self):
+        return len(self.train_trials)
+
+    # Test funtions
+    def get_test_sample(self, index):
+        # Sample is observation (EMG, Pose)
+        return self.test_trials[self.current_test_trial][index]
+
+    def get_num_test_samples(self):
+        return len(self.train_trials[self.current_train_trial])
+
+    def get_num_test_trials(self):
+        return len(self.train_trials)
+
+    def draw(self, trial):
+        self.current_train_trial = trial
+        self.current_test_trial = trial
+
+    def set_mode(self, mode="train"):
+        if mode == "train":
+            self.get_sample = self.get_train_sample
+            self.get_num_samples = self.get_num_train_samples
+            self.get_num_trials = self.get_num_train_trials
+        elif mode == "test":
+            self.get_sample = self.get_test_sample
+            self.get_num_samples = self.get_num_test_samples
+            self.get_num_trials = self.get_num_test_trials
+    

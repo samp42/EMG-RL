@@ -7,7 +7,7 @@ See [here](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manag
 To install the necessary packages, run:
 
 ```bash
-conda create -n emg-rl python=3.12
+conda create -n emg-rl python=3.8
 conda activate emg-rl
 pip install -r requirements.txt
 ```
@@ -17,6 +17,8 @@ pip install -r requirements.txt
 ## Install MuJoCo
 
 Download MuJoCo 2.1.0 following these instructions: https://gist.github.com/saratrajput/60b1310fe9d9df664f9983b38b50d5da
+
+The package libglew1.5 could cause problem. Remove it if issues occur.
 
 (testing the Py example should fail here)
 
@@ -48,6 +50,8 @@ Navigate to the repo top-level and run:
 ```
 pip install -e .
 ```
+
+if `python envtest2.py` fails, try running `conda install -c conda-forge gcc=12.1.0`
 
 # Data
 

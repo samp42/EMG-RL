@@ -158,3 +158,13 @@ class TwoHands(BaseHandEnv):
         self.goal = np.zeros(1) # unused but required
         obs = self._get_obs()["observation"]
         return obs
+    
+    # Loader leaked functions (required control)
+    def set_mode(self, mode="train"):
+        self.loader.set_mode(mode)
+
+    def draw(self, trial):
+        self.loader.draw(trial)
+
+    def get_num_trials(self):
+        return self.loader.get_num_trials()
