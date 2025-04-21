@@ -36,18 +36,26 @@ subjects = {
 }
 
 for subject in subjects:
-    env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=5, subject=subject, exercise=2) 
+    env = gym.make(name, datapath=datapath, n_substeps=5, subsampling=1, subject=subject, exercise=2) 
     obs = env.reset() 
     env.render()
-    r_sum = 0.0
-    d = False
-    #while not d:
-    for i in range(1000): # show the first 1000 steps of each subject
-        action = env.action_space.sample()
-        #action = np.zeros(len(env.action_space.sample()))
-        obs, r, d, info = env.step(action)
-        r_sum += r
-        #time.sleep(0.07)
-        env.render() # TODO: remove for faster simulation
-    print(r_sum)
-    env.close()
+
+    # Episodes
+    env.set_mode("train") # set env in training mode
+    episodes = np.array(range(env.get_num_trials()))
+    np.random.shuffle(episodes) # select each trial randomly
+    for ep in episodes:
+        env.draw(ep) # draw current episode in trials
+
+        r_sum = 0.0
+        d = False
+        #while not d:
+        while not d: 
+            action = env.action_space.sample()
+            #action = np.zeros(len(env.action_space.sample()))
+            obs, r, d, info = env.step(action)
+            r_sum += r
+            #time.sleep(0.07)
+            env.render() # TODO: remove for faster simulation
+        print(r_sum)
+        env.close()
