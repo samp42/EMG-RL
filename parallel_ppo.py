@@ -8,11 +8,14 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from typing import Tuple, Dict, Optional, Callable
 import gym
 import csv
+import pathlib
+import gym_emg
 
 def make_env(env_fn, seed=0):
     def _init():
         env = env_fn()
-        env.reset(seed=seed + np.random.randint(0, 1000))  # Different seed for each env
+        env.seed(seed)
+        env.reset()
         return env
     return _init
 
@@ -57,7 +60,7 @@ class RolloutBuffer:
         # Initialize buffers
         self.observations = np.zeros((buffer_size, num_envs, *obs_shape), dtype=np.float32)
         self.actions = np.zeros((buffer_size, num_envs, action_dim), dtype=np.float32)
-        self.logprobs = np.zeros((buffer_size, num_envs), dtype=np.float32)
+        self.logprobs = np.zeros((buffer_size, num_envs, action_dim), dtype=np.float32)
         self.rewards = np.zeros((buffer_size, num_envs), dtype=np.float32)
         self.dones = np.zeros((buffer_size, num_envs), dtype=np.float32)
         self.values = np.zeros((buffer_size, num_envs), dtype=np.float32)
@@ -65,16 +68,16 @@ class RolloutBuffer:
         self.returns = np.zeros((buffer_size, num_envs), dtype=np.float32)
 
     def add(self, obs, action, logprob, reward, done, value):
-        self.observations[self.pos] = obs
-        self.actions[self.pos] = action
-        self.logprobs[self.pos] = logprob
-        self.rewards[self.pos] = reward
-        self.dones[self.pos] = done
-        self.values[self.pos] = value
-        self.pos += 1
-        if self.pos == self.buffer_size:
+        if not self.full and self.pos >= self.buffer_size:
+            self.observations[self.pos] = obs
+            self.actions[self.pos] = action
+            self.logprobs[self.pos] = logprob.reshape(-1)
+            self.rewards[self.pos] = reward
+            self.dones[self.pos] = done
+            self.values[self.pos] = value.reshape(-1)
+            self.pos += 1
+        else:
             self.full = True
-            self.pos = 0
 
     def get(self, batch_size: Optional[int] = None):
         if not self.full:
@@ -101,23 +104,26 @@ class RolloutBuffer:
         else:
             yield (obs, actions, old_logprobs, advantages, returns)
 
-    def compute_returns_and_advantage(self, last_values: np.ndarray, gamma: float, gae_lambda: float):
-        # Convert to numpy
-        last_values = last_values.copy()
-        last_gae_lam = 0
+    def reset(self):
+        self.pos = 0
+        self.full = False
 
-        for step in reversed(range(self.buffer_size)):
-            if step == self.buffer_size - 1:
-                next_non_terminal = 1.0 - self.dones[step]
-                next_values = last_values
+    def compute_gae(self, next_value, gamma=0.99, gae_lambda=0.95):
+        advantages = np.zeros_like(self.rewards)
+        last_advantage = np.zeros((self.num_envs,), dtype=np.float32)
+
+        for t in reversed(range(self.buffer_size)):
+            if t == self.buffer_size - 1:
+                next_vals = next_value
+                next_non_terminal = 1.0 - self.dones[t]
             else:
-                next_non_terminal = 1.0 - self.dones[step + 1]
-                next_values = self.values[step + 1]
+                next_vals = self.values[t + 1]
+                next_non_terminal = 1.0 - self.dones[t]
 
-            delta = self.rewards[step] + gamma * next_values * next_non_terminal - self.values[step]
-            last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * last_gae_lam
-            self.advantages[step] = last_gae_lam
+            delta = self.rewards[t] + gamma * next_vals * next_non_terminal - self.values[t]
+            advantages[t] = last_advantage = delta + gamma * gae_lambda * next_non_terminal * last_advantage
 
+        self.advantages = advantages
         self.returns = self.advantages + self.values
 
 class PPO:
@@ -157,9 +163,26 @@ class PPO:
         self.ep_info_buffer = []
         self.current_obs = self.env.reset()
 
+    def compute_gae(self, rewards, values, dones):
+
+        advantages = np.zeros_like(rewards)
+        last_gae = 0
+        for t in reversed(range(len(rewards))):
+            if t == len(rewards) - 1:
+                next_non_terminal = 1.0 - dones[t]
+                next_values = values[t]
+            else:
+                next_non_terminal = 1.0 - dones[t + 1]
+                next_values = values[t + 1]
+
+            delta = rewards[t] + self.gamma * next_values * next_non_terminal - values[t]
+            last_gae = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae
+            advantages[t] = last_gae
+
+        return advantages
+
     def collect_rollouts(self) -> bool:
-        self.rollout_buffer.pos = 0
-        self.rollout_buffer.full = False
+        self.rollout_buffer.reset()
 
         episode_rewards = np.zeros(self.num_envs)  # Track rewards for each environment
         for step in range(self.n_steps):
@@ -167,23 +190,23 @@ class PPO:
                 obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
 
                 # Get actions and values
-                actions, values, logprobs = self.policy(obs_tensor)
+                actions, logprobs, value = self.policy(obs_tensor)
                 actions = actions.cpu().numpy()
-                values = values.cpu().numpy().flatten()
+                value = value.cpu().numpy()
                 logprobs = logprobs.cpu().numpy()
 
             # Execute in environment
-            next_obs, rewards, dones, infos = self.env.step(actions)
+            next_obs, reward, done, infos = self.env.step(actions)
 
-            episode_rewards += rewards
+            episode_rewards += reward
 
             self.rollout_buffer.add(
                 self.current_obs,
-                actions,
+                actions.reshape(self.num_envs, -1),
                 logprobs,
-                rewards,
-                dones,
-                values
+                reward,
+                done,
+                value
             )
 
             self.current_obs = next_obs
@@ -199,16 +222,23 @@ class PPO:
             _, _, last_values = self.policy(last_obs_tensor)
             last_values = last_values.cpu().numpy().flatten()
 
-        self.rollout_buffer.compute_returns_and_advantage(last_values, self.gamma, self.gae_lambda)
+        self.rollout_buffer.compute_gae(last_values, self.gamma, self.gae_lambda)
+        # self.rollout_buffer.compute_returns_and_advantage(last_values, self.gamma, self.gae_lambda)
+        # advantages = self.compute_gae(
+        #     self.rollout_buffer.rewards[:self.rollout_buffer.pos],
+        #     np.concatenate((self.rollout_buffer.values[:self.rollout_buffer.pos], last_values.reshape(1, -1))),
+        #     self.rollout_buffer.dones[:self.rollout_buffer.pos]
+        # )
+        # self.rollout_buffer.advantages[:self.rollout_buffer.pos] = advantages
+        # self.rollout_buffer.returns[:self.rollout_buffer.pos] = advantages + self.rollout_buffer.values[:self.rollout_buffer.pos]
 
         return True
 
-    def save_rewards_to_csv(self, filename="episode_rewards.csv"):
-        with open(filename, mode="w", newline="") as file:
+    def save_rewards_to_csv(self, rewards, filename="episode_rewards.csv"):
+        with open(filename, mode='a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(["Episode", "Reward"])
-            for i, reward in enumerate(self.episode_rewards):
-                writer.writerow([i + 1, reward])
+            for i in range(rewards.shape[0]):
+                writer.writerow(rewards[i])
 
     def train(self) -> Dict[str, float]:
         # Update policy for n_epochs
@@ -314,14 +344,22 @@ class PPO:
                 # Print training stats
                 tqdm.write(", ".join([f"{k}: {v:.3f}" for k, v in train_stats.items()]))
 
-            self.save_rewards_to_csv()
+                # Save rewards to CSV
+                self.save_rewards_to_csv(self.rollout_buffer.rewards)
+
+                # Reset the environment
+                self.current_obs = self.env.reset()
+
+            self.env.close()
 
             return self
 
 
 if __name__ == "__main__":
+    datapath = f"{pathlib.Path('~').expanduser()}/Desktop/COMP579/data"
+
     def create_env():
-        env = gym.make("CarRacing-v0")
+        env = gym.make("gym_emg/TwoHands-v0", datapath=datapath, n_substeps=5, subsampling=1, subject=1, exercise=2)
         return env
 
     ppo = PPO(

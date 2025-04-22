@@ -1,9 +1,6 @@
-gym
 torch
-torchvision
 matplotlib
 stable-baselines3
 swig
-box2d-py
-# shimmy>=2.0
+shimmy>=2.0
 tqdm

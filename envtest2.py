@@ -55,6 +55,7 @@ for subject in subjects:
             #action = np.zeros(len(env.action_space.sample()))
             obs, r, d, info = env.step(action)
             r_sum += r
+            print(r)
             #time.sleep(0.07)
             env.render() # TODO: remove for faster simulation
         print(r_sum)
