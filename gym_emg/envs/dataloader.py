@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-# CyberGlove II mapping: https://www.researchgate.net/figure/Cyberglove-II-device-and-the-placement-of-the-22-sensors_fig1_338483027 
+# CyberGlove II mapping: https://www.researchgate.net/figure/Cyberglove-II-device-and-the-placement-of-the-22-sensors_fig1_338483027
 sim2glove_old = {
     "WF": { # Wrist flex
         "id": {1:21},
@@ -17,12 +17,12 @@ sim2glove_old = {
         "simmap": [0, 90]
     },
 
-    "IM": { # Index metacarpal 
+    "IM": { # Index metacarpal
         "id": {3:5}, # OK
         "glovemap": [0,100],
         "simmap": [0, 90]
     },
-    "IP": { # Index proximal 
+    "IP": { # Index proximal
         "id": {4:6}, # OK
         "glovemap": [0,100],
         "simmap": [0, 90]
@@ -83,7 +83,7 @@ sim2glove_old = {
 
 
     # 1: general hand flexion? more like metacarpal to/from palm
-    # 
+    #
 
     "Ta": { # Thumb abduction (proximal)
         "id": {17:None},
@@ -128,11 +128,11 @@ sim2glove = {
         "simmap": [0, 90]
     },
 
-    "IM": { # Index metacarpal 
+    "IM": { # Index metacarpal
         "id": {3:5}, # OK
         "simmap": [0, 90] # OK
     },
-    "IP": { # Index proximal 
+    "IP": { # Index proximal
         "id": {4:7}, # OK
         "simmap": [0, 140]
     },
@@ -149,7 +149,7 @@ sim2glove = {
     "MP": { # Middle proximal
         "id": {7:9},
         #"simmap": [0, 90] # Not working??
-        "simmap": [0, 60] 
+        "simmap": [0, 60]
     },
 
     "Ra": { # Ring abduction
@@ -202,7 +202,7 @@ sim2glove = {
         "simmap": [-25, 20]
     },
     "Tb": { # Thumb ptit boutte
-        "id": {19:4}, 
+        "id": {19:4},
         "simmap": [65, -45]
     },
 }
@@ -215,7 +215,7 @@ class dataloader:
 
         # Create mappings
         self.sim2glovemap = {} # sim to glove ID map
-        self.simmap = {} 
+        self.simmap = {}
         self.glovemap = {}
         for joint in sim2glove:
             if list(sim2glove[joint]["id"].values())[0] is not None:
@@ -296,23 +296,25 @@ class dataloader:
             trials.append(trial)
         self.trials = trials
 
-        # For each exercise, randomly select one trial as 
+        # For each exercise, randomly select one trial as
         test_ids = np.zeros(int(len(trials)/6))
+
         for i in range(int(len(trials)/6)):
             test_ids[i] = np.random.randint(i*6,(i+1)*6)
 
         self.train_trials = [self.trials[id] for id in range(len(self.trials)) if id not in test_ids]
         self.test_trials = [self.trials[id] for id in range(len(self.trials)) if id in test_ids]
 
+
         self.current_train_trial = 0
         self.current_test_trial = 0
         self.set_mode()
-     
+
     # Train functions
     def get_train_sample(self, index):
         # Sample is observation (EMG, Pose)
         return self.train_trials[self.current_train_trial][index]
-        
+
     def get_num_train_samples(self):
         return len(self.train_trials[self.current_train_trial])
 
@@ -343,4 +345,7 @@ class dataloader:
             self.get_sample = self.get_test_sample
             self.get_num_samples = self.get_num_test_samples
             self.get_num_trials = self.get_num_test_trials
-    
+
+    def shuffle(self, test_ids):
+        self.train_trials = [self.trials[id] for id in range(len(self.trials)) if id not in test_ids]
+        self.test_trials = [self.trials[id] for id in range(len(self.trials)) if id in test_ids]

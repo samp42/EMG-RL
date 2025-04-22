@@ -27,13 +27,13 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
         self.n_actions = 40 # Two static hands with only joints moving
         n_substeps=n_substeps
         initial_qpos = {}
-        relative_control = False   
+        relative_control = False
 
         #super(RobotEnv, self).__init__(
         #    model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos
         #)
         RobotEnv.__init__(self,
-            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos, 
+            model_path=TWO_HAND_XML, n_substeps=n_substeps, n_actions=self.n_actions, initial_qpos=initial_qpos,
         )
 
         # Define action space and observation space
@@ -74,7 +74,7 @@ class BaseHandEnv(RobotEnv, utils.EzPickle):
                 self.sim.step()
             except mujoco_py.MujocoException:
                 return False
-        return True 
+        return True
 
     def _sample_goal(self):
         # TODO: unused, but required by super class
@@ -127,7 +127,7 @@ class TwoHands(BaseHandEnv):
             done = True
 
         #print(f"Num samples: {self.sample_counter}, total: {self.loader.get_num_samples()}")
-        
+
         action = np.clip(action, self.action_space.low, self.action_space.high)
         ref_action = np.clip(ref_action, self.action_space.low, self.action_space.high)
         action = np.concatenate((action, ref_action)) # Need to concatenate after due to action space size
@@ -159,7 +159,7 @@ class TwoHands(BaseHandEnv):
         self.goal = np.zeros(1) # unused but required
         obs = self._get_obs()["observation"]
         return obs
-    
+
     # Loader leaked functions (required control)
     def set_mode(self, mode="train"):
         self.loader.set_mode(mode)
@@ -169,3 +169,9 @@ class TwoHands(BaseHandEnv):
 
     def get_num_trials(self):
         return self.loader.get_num_trials()
+
+    def shuffle(self, test_ids):
+        self.loader.shuffle(test_ids)
+
+    def get_num_samples(self):
+        return self.loader.get_num_samples()

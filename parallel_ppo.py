@@ -55,6 +55,8 @@ class RolloutBuffer:
     def __init__(self, buffer_size: int, num_envs: int, obs_shape: Tuple, action_dim: int):
         self.buffer_size = buffer_size
         self.num_envs = num_envs
+        self.obs_shape = obs_shape
+        self.action_dim = action_dim
         self.pos = 0
         self.full = False
 
@@ -69,7 +71,7 @@ class RolloutBuffer:
         self.returns = np.zeros((buffer_size, num_envs), dtype=np.float32)
 
     def add(self, obs, action, logprob, reward, done, value):
-        if not self.full and self.pos >= self.buffer_size:
+        if not self.full and self.pos < self.buffer_size:
             self.observations[self.pos] = obs
             self.actions[self.pos] = action
             self.logprobs[self.pos] = logprob.reshape(-1)
@@ -77,7 +79,8 @@ class RolloutBuffer:
             self.dones[self.pos] = done
             self.values[self.pos] = value.reshape(-1)
             self.pos += 1
-        else:
+
+        if self.pos >= self.buffer_size - 1:
             self.full = True
 
     def get(self, batch_size: Optional[int] = None):
@@ -105,9 +108,20 @@ class RolloutBuffer:
         else:
             yield (obs, actions, old_logprobs, advantages, returns)
 
-    def reset(self):
+    def reset(self, num_samples: int):
         self.pos = 0
         self.full = False
+
+        self.buffer_size = num_samples
+
+        self.observations = np.zeros((self.buffer_size, self.num_envs, *self.obs_shape), dtype=np.float32)
+        self.actions = np.zeros((self.buffer_size, self.num_envs, self.action_dim), dtype=np.float32)
+        self.logprobs = np.zeros((self.buffer_size, self.num_envs, self.action_dim), dtype=np.float32)
+        self.rewards = np.zeros((self.buffer_size, self.num_envs), dtype=np.float32)
+        self.dones = np.zeros((self.buffer_size, self.num_envs), dtype=np.float32)
+        self.values = np.zeros((self.buffer_size, self.num_envs), dtype=np.float32)
+        self.advantages = np.zeros((self.buffer_size, self.num_envs), dtype=np.float32)
+        self.returns = np.zeros((self.buffer_size, self.num_envs), dtype=np.float32)
 
     def compute_gae(self, next_value, gamma=0.99, gae_lambda=0.95):
         advantages = np.zeros_like(self.rewards)
@@ -132,8 +146,8 @@ class PPO:
                  gamma=0.99, gae_lambda=0.95, clip_range=0.2, clip_range_vf=None, ent_coef=0.0, vf_coef=0.5,
                  max_grad_norm=0.5, learning_rate=3e-4, update_epochs=10, device=None):
 
-        # self.env = SubprocVecEnv([make_env(env_fn, seed=i) for i in range(num_envs)])
-        self.env = env_fn()
+        self.env = SubprocVecEnv([make_env(env_fn, seed=i) for i in range(num_envs)])
+        # self.env = env_fn()
         self.num_envs = num_envs
         self.n_steps = n_steps
         self.epochs = epochs
@@ -184,13 +198,14 @@ class PPO:
         return advantages
 
     def collect_rollouts(self) -> bool:
-        self.rollout_buffer.reset()
+        num_samples = self.env.env_method("get_num_samples")[0]
+        self.rollout_buffer.reset(num_samples)
 
         episode_rewards = np.zeros(self.num_envs)  # Track rewards for each environment
         #for step in range(self.n_steps):
 
-        done = False
-        while not done:
+        dones = np.zeros(self.num_envs, dtype=bool)
+        while not all(dones):
             with torch.no_grad():
                 obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
 
@@ -201,16 +216,16 @@ class PPO:
                 logprobs = logprobs.cpu().numpy()
 
             # Execute in environment
-            next_obs, reward, done, infos = self.env.step(actions)
+            next_obs, rewards, dones, infos = self.env.step(actions)
 
-            episode_rewards += reward
+            episode_rewards += rewards
 
             self.rollout_buffer.add(
                 self.current_obs,
                 actions.reshape(self.num_envs, -1),
                 logprobs,
-                reward,
-                done,
+                rewards,
+                dones,
                 value
             )
 
@@ -220,7 +235,7 @@ class PPO:
             for info in infos:
                 if "episode" in info:
                     self.ep_info_buffer.append(info["episode"])
-        
+
         # Compute returns and advantages
         with torch.no_grad():
             last_obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
@@ -327,21 +342,36 @@ class PPO:
         num_timesteps = 0
 
         # Manage trials randomization
-        episodes = np.array(range(self.env.get_num_trials()))
+        # episodes = np.array(range(self.env.get_num_trials()))
+        num_trials = self.env.env_method("get_num_trials")[0]
+        episodes = np.array(range(num_trials))
         np.random.shuffle(episodes) # select each trial randomly
+
+        # For each exercise, randomly select one trial as
+        test_ids = np.zeros(int(num_trials/6))
+
+        for i in range(int(num_trials/6)):
+            test_ids[i] = np.random.randint(i*6,(i+1)*6)
+
+        for i in range(self.num_envs):
+            self.env.env_method("shuffle", test_ids, indices=[i])
 
         with tqdm(total=total_timesteps, desc="Training RL", position=0, leave=True) as pbar:
             while num_timesteps < total_timesteps:
 
                 # Change exercise trial before running new episode
-                self.env.draw(random.choice(episodes))
+                # self.env.draw(random.choice(episodes))
+                trial = random.choice(episodes)
+                for i in range(self.num_envs):
+                    self.env.env_method("draw", trial, indices=[i])
                 self.env.reset()
-                
+
                 # Collect rollouts
                 self.collect_rollouts()
 
                 # Train on collected data
                 train_stats = self.train()
+                train_stats["train/rewards"] = np.mean(self.rollout_buffer.rewards)
 
                 # Update timestep counter
                 num_timesteps += self.n_steps * self.num_envs
