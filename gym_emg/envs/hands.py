@@ -152,6 +152,7 @@ class TwoHands(BaseHandEnv):
         return self.alpha * reward
 
     def reset(self):
+        self.sample_counter = 0
         did_reset_sim = False
         while not did_reset_sim:
             did_reset_sim = self._reset_sim()

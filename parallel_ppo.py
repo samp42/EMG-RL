@@ -10,6 +10,7 @@ import gym
 import csv
 import pathlib
 import gym_emg
+import random
 
 def make_env(env_fn, seed=0):
     def _init():
@@ -146,7 +147,8 @@ class PPO:
         self.max_grad_norm = max_grad_norm
         self.learning_rate = learning_rate
         self.update_epochs = update_epochs
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        #self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cpu"
 
         # Get observation and action spaces
         print("Observation space:", self.env.observation_space)
@@ -185,7 +187,10 @@ class PPO:
         self.rollout_buffer.reset()
 
         episode_rewards = np.zeros(self.num_envs)  # Track rewards for each environment
-        for step in range(self.n_steps):
+        #for step in range(self.n_steps):
+
+        done = False
+        while not done:
             with torch.no_grad():
                 obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
 
@@ -215,7 +220,7 @@ class PPO:
             for info in infos:
                 if "episode" in info:
                     self.ep_info_buffer.append(info["episode"])
-
+        
         # Compute returns and advantages
         with torch.no_grad():
             last_obs_tensor = torch.as_tensor(self.current_obs).float().to(self.device)
@@ -248,7 +253,7 @@ class PPO:
         loss_vf = 0.0
         loss_ent = 0.0
 
-        for epoch in tqdm(range(self.epochs), desc="Training", position=0, leave=True):
+        for epoch in tqdm(range(self.epochs), desc="Training NN", position=0, leave=True):
             for batch_data in self.rollout_buffer.get(self.batch_size):
                 obs, actions, old_logprobs, advantages, returns = batch_data
 
@@ -321,8 +326,17 @@ class PPO:
     def learn(self, total_timesteps: int):
         num_timesteps = 0
 
-        with tqdm(total=total_timesteps, desc="Training", position=0, leave=True) as pbar:
+        # Manage trials randomization
+        episodes = np.array(range(self.env.get_num_trials()))
+        np.random.shuffle(episodes) # select each trial randomly
+
+        with tqdm(total=total_timesteps, desc="Training RL", position=0, leave=True) as pbar:
             while num_timesteps < total_timesteps:
+
+                # Change exercise trial before running new episode
+                self.env.draw(random.choice(episodes))
+                self.env.reset()
+                
                 # Collect rollouts
                 self.collect_rollouts()
 
