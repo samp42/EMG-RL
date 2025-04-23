@@ -11,6 +11,7 @@ import csv
 import pathlib
 import gym_emg
 import random
+import os
 
 def make_env(env_fn, seed=0):
     def _init():
@@ -33,8 +34,7 @@ class ActorCritic(nn.Module):
 
         # Actor
         self.mean = nn.Linear(hidden_dim, act_dim)
-        self.log_std = nn.Parameter(torch.zeros(act_dim))  # learnable
-
+        self.log_std = nn.Parameter(torch.full((act_dim,), -0.5))
         # Critic
         self.value = nn.Linear(hidden_dim, 1)
 
@@ -46,7 +46,8 @@ class ActorCritic(nn.Module):
     def evaluate_actions(self, states, actions):
         """Returns log probability of actions, entropy, and value"""
         mean, std, value = self.forward(states)
-        dist = Normal(mean, std)
+        # print(f"Mean: {mean}, Std: {std}, Value: {value}")
+        dist = Normal(mean, std + 1e-6)
         logprobs = dist.log_prob(actions).sum(axis=-1)
         entropy = dist.entropy().sum(axis=-1)
         return logprobs, entropy, value
@@ -179,6 +180,10 @@ class PPO:
         self.ep_info_buffer = []
         self.current_obs = self.env.reset()
 
+        # Remove episode_rewards.csv
+        if os.path.exists("results.csv"):
+            os.remove("results.csv")
+
     def compute_gae(self, rewards, values, dones):
 
         advantages = np.zeros_like(rewards)
@@ -214,6 +219,8 @@ class PPO:
                 actions = actions.cpu().numpy()
                 value = value.cpu().numpy()
                 logprobs = logprobs.cpu().numpy()
+
+                # print(f"Logprobs: {logprobs}")
 
             # Execute in environment
             next_obs, rewards, dones, infos = self.env.step(actions)
@@ -260,6 +267,11 @@ class PPO:
             for i in range(rewards.shape[0]):
                 writer.writerow(rewards[i])
 
+    def save_results_to_csv(self, results, filename="results.csv"):
+        with open(filename, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(results)
+
     def train(self) -> Dict[str, float]:
         # Update policy for n_epochs
         approx_kl = 0.0
@@ -268,7 +280,7 @@ class PPO:
         loss_vf = 0.0
         loss_ent = 0.0
 
-        for epoch in tqdm(range(self.epochs), desc="Training NN", position=0, leave=True):
+        for epoch in tqdm(range(self.epochs), desc="Training NN", position=1, leave=False):
             for batch_data in self.rollout_buffer.get(self.batch_size):
                 obs, actions, old_logprobs, advantages, returns = batch_data
 
@@ -284,6 +296,8 @@ class PPO:
 
                 # Get current policy outputs
                 logprobs, entropy, values = self.policy.evaluate_actions(obs_tensor, actions_tensor)
+                # print(f"Logprobs: {logprobs}, old_logprobs: {old_logprobs_tensor}")
+
                 values = values.flatten()
 
                 # Policy loss
@@ -315,7 +329,10 @@ class PPO:
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+
+                # print(f"Before optimization, logstd: {self.policy.log_std}")
                 self.optimizer.step()
+                # print(f"After optimization, logstd: {self.policy.log_std}")
 
                 # Logging
                 approx_kl = (old_logprobs_tensor - logprobs).mean().item()
@@ -335,7 +352,8 @@ class PPO:
             "loss/value": loss_vf,
             "loss/entropy": loss_ent,
             "policy/approx_kl": approx_kl,
-            "policy/clip_fraction": clip_fraction
+            "policy/clip_fraction": clip_fraction,
+            "policy/ratio": ratio.mean().item(),
         }
 
     def learn(self, total_timesteps: int):
@@ -389,12 +407,16 @@ class PPO:
                 tqdm.write(", ".join([f"{k}: {v:.3f}" for k, v in train_stats.items()]))
 
                 # Save rewards to CSV
-                self.save_rewards_to_csv(self.rollout_buffer.rewards)
+                # self.save_rewards_to_csv(self.rollout_buffer.rewards)
+                self.save_results_to_csv(train_stats.values())
 
                 # Reset the environment
                 self.current_obs = self.env.reset()
 
             self.env.close()
+
+            # Save final model
+            torch.save(self.policy.state_dict(), "ppo_model.pth")
 
             return self
 
@@ -409,7 +431,7 @@ if __name__ == "__main__":
     ppo = PPO(
         env_fn=create_env,
         policy_class=ActorCritic,
-        num_envs=2,
+        num_envs=1,
         n_steps=2048,
         epochs=10,
         batch_size=256,
@@ -420,4 +442,4 @@ if __name__ == "__main__":
         update_epochs=10
     )
 
-    ppo.learn(total_timesteps=50000)
+    ppo.learn(total_timesteps=2000000)
