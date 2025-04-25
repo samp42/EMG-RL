@@ -51,7 +51,7 @@ Navigate to the repo top-level and run:
 pip install -e .
 ```
 
-if `python envtest2.py` fails, try running `conda install -c conda-forge gcc=12.1.0`
+if `python envtest.py` fails, try running `conda install -c conda-forge gcc=12.1.0`
 
 # Data
 
