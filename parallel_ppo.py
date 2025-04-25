@@ -46,7 +46,6 @@ class ActorCritic(nn.Module):
     def evaluate_actions(self, states, actions):
         """Returns log probability of actions, entropy, and value"""
         mean, std, value = self.forward(states)
-        # print(f"Mean: {mean}, Std: {std}, Value: {value}")
         dist = Normal(mean, std + 1e-6)
         logprobs = dist.log_prob(actions).sum(axis=-1)
         entropy = dist.entropy().sum(axis=-1)
@@ -148,7 +147,6 @@ class PPO:
                  max_grad_norm=0.5, learning_rate=3e-4, update_epochs=10, device=None):
 
         self.env = SubprocVecEnv([make_env(env_fn, seed=i) for i in range(num_envs)])
-        # self.env = env_fn()
         self.num_envs = num_envs
         self.n_steps = n_steps
         self.epochs = epochs
@@ -162,7 +160,6 @@ class PPO:
         self.max_grad_norm = max_grad_norm
         self.learning_rate = learning_rate
         self.update_epochs = update_epochs
-        #self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = "cpu"
 
         # Get observation and action spaces
@@ -207,7 +204,6 @@ class PPO:
         self.rollout_buffer.reset(num_samples)
 
         episode_rewards = np.zeros(self.num_envs)  # Track rewards for each environment
-        #for step in range(self.n_steps):
 
         dones = np.zeros(self.num_envs, dtype=bool)
         while not all(dones):
@@ -219,8 +215,6 @@ class PPO:
                 actions = actions.cpu().numpy()
                 value = value.cpu().numpy()
                 logprobs = logprobs.cpu().numpy()
-
-                # print(f"Logprobs: {logprobs}")
 
             # Execute in environment
             next_obs, rewards, dones, infos = self.env.step(actions)
@@ -250,22 +244,8 @@ class PPO:
             last_values = last_values.cpu().numpy().flatten()
 
         self.rollout_buffer.compute_gae(last_values, self.gamma, self.gae_lambda)
-        # self.rollout_buffer.compute_returns_and_advantage(last_values, self.gamma, self.gae_lambda)
-        # advantages = self.compute_gae(
-        #     self.rollout_buffer.rewards[:self.rollout_buffer.pos],
-        #     np.concatenate((self.rollout_buffer.values[:self.rollout_buffer.pos], last_values.reshape(1, -1))),
-        #     self.rollout_buffer.dones[:self.rollout_buffer.pos]
-        # )
-        # self.rollout_buffer.advantages[:self.rollout_buffer.pos] = advantages
-        # self.rollout_buffer.returns[:self.rollout_buffer.pos] = advantages + self.rollout_buffer.values[:self.rollout_buffer.pos]
 
         return True
-
-    def save_rewards_to_csv(self, rewards, filename="episode_rewards.csv"):
-        with open(filename, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            for i in range(rewards.shape[0]):
-                writer.writerow(rewards[i])
 
     def save_results_to_csv(self, results, filename="results.csv"):
         with open(filename, mode='a', newline='') as file:
@@ -296,7 +276,6 @@ class PPO:
 
                 # Get current policy outputs
                 logprobs, entropy, values = self.policy.evaluate_actions(obs_tensor, actions_tensor)
-                # print(f"Logprobs: {logprobs}, old_logprobs: {old_logprobs_tensor}")
 
                 values = values.flatten()
 
@@ -329,10 +308,7 @@ class PPO:
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-
-                # print(f"Before optimization, logstd: {self.policy.log_std}")
                 self.optimizer.step()
-                # print(f"After optimization, logstd: {self.policy.log_std}")
 
                 # Logging
                 approx_kl = (old_logprobs_tensor - logprobs).mean().item()
@@ -360,7 +336,6 @@ class PPO:
         num_timesteps = 0
 
         # Manage trials randomization
-        # episodes = np.array(range(self.env.get_num_trials()))
         num_trials = self.env.env_method("get_num_trials")[0]
         episodes = np.array(range(num_trials))
         np.random.shuffle(episodes) # select each trial randomly
@@ -378,7 +353,6 @@ class PPO:
             while num_timesteps < total_timesteps:
 
                 # Change exercise trial before running new episode
-                # self.env.draw(random.choice(episodes))
                 trial = random.choice(episodes)
                 for i in range(self.num_envs):
                     self.env.env_method("draw", trial, indices=[i])
@@ -407,7 +381,6 @@ class PPO:
                 tqdm.write(", ".join([f"{k}: {v:.3f}" for k, v in train_stats.items()]))
 
                 # Save rewards to CSV
-                # self.save_rewards_to_csv(self.rollout_buffer.rewards)
                 self.save_results_to_csv(train_stats.values())
 
                 # Reset the environment
